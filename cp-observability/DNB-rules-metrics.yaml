@@ -1,0 +1,184 @@
+broker_rules = {
+    rule1 = {
+      alert_name = "more_than_zero_unreplicated_partion_observed_for_last_1m"
+      enabled    = true
+      expression = <<-EOT
+             sum(kafka_server_replicamanager_underreplicatedpartitions{app=~"kafka"}) > 0
+        EOT
+      for        = "PT1M"
+      severity   = 1
+      alert_resolution = {
+        auto_resolved   = true
+        time_to_resolve = "PT5M"
+      }
+      annotations = {
+        description = join(". ", ["More than 0 unreplicated partition observed in *${local.environment}* kafka cluster, View <https://confluence.tech.dnb.no/display/KKO/Min+in+sync+replica+greater+than+zero | Runbook > to understand this alert"])
+      }
+ 
+      action_group_id = module.action_group["opsgeine-notify"].id
+ 
+    }
+ 
+    rule2 = {
+      alert_name = "requesthandleravgidlepercent_less_than_40"
+      expression = <<-EOT
+            kafka_server_kafkarequesthandlerpool_requesthandleravgidlepercent_total{app="kafka"}*100 < 40
+        EOT
+      severity   = 1
+      annotations = {
+        description = join(". ", ["Percentage of time a Request Handler thread is idle, may lead to higher request latencies and possible URP.", "Environment: ${local.environment}"])
+      }
+    }
+ 
+    rule3 = {
+      alert_name = "network_processor_avg_idle_percent_less_than_40"
+      expression = <<-EOT
+            kafka_network_socketserver_networkprocessoravgidlepercent{app="kafka"}*100 < 40
+        EOT
+      severity   = 1
+      annotations = {
+        description = join(". ", ["Percentage of time a network processsor is idle, may lead to higher request latencies and possible URP.", "Environment: ${local.environment}"])
+      }
+    }
+ 
+    rule4 = {
+      alert_name = "request_channel_RequestQueueSize"
+      expression = <<-EOT
+            increase(kafka_network_requestchannel_requestqueuesize{app="kafka"}[5m]) > 5
+        EOT
+      severity   = 1
+      annotations = {
+        description = join(". ", ["Request queue size grows this will mean the broker is having issues serving requests in a timely fashion.", "Environment: ${local.environment}"])
+      }
+    }
+ 
+    rule5 = {
+      alert_name = "fetch_follower_request_totaltimes"
+      expression = <<-EOT
+            kafka_network_requestmetrics_totaltimems{request="fetchfollower",app="kafka",quantile="0.99"} > 1000
+        EOT
+      severity   = 1
+      annotations = {
+        component   = "kafka"
+        description = join(". ", ["Totat time in ms as seen by fetch follower.", "Environment: ${local.environment}"])
+      }
+    }
+ 
+    rule6 = {
+      alert_name = "fetchconsumer_request_totaltimes"
+      expression = <<-EOT
+            kafka_network_requestmetrics_totaltimems{request="fetchconsumer",app="kafka",quantile="0.99"} > 1000
+        EOT
+      severity   = 1
+ 
+      annotations = {
+        component   = "kafka"
+        description = join(". ", ["Totat time in ms as seen by fetchconsumer.", "Environment: ${local.environment}"])
+      }
+    }
+ 
+    rule7 = {
+      alert_name = "Produce_request_totaltimes"
+      enabled    = true
+      expression = <<-EOT
+            kafka_network_requestmetrics_totaltimems{request="Produce",app="kafka",quantile="0.99"} > 1000
+        EOT
+      severity   = 1
+      annotations = {
+        component   = "kafka"
+        description = join(". ", ["Totat time in ms as seen by producer.", "Environment: ${local.environment}"])
+      }
+    }
+ 
+    rule8 = {
+      alert_name = "disk_usage_percentage"
+      enabled    = true
+      expression = <<-EOT
+            io_confluent_caas_volumemetrics_percentused{app="kafka"} > 60
+        EOT
+      severity   = 1
+      annotations = {
+        component   = "kafka"
+        description = join(". ", ["Disk usage percent of kafak above 60% for {{ $labels.kubernetes_pod_name }}", "Environment: ${local.environment}"])
+      }
+      action_group_id = module.action_group["opsgeine-notify"].id
+    }
+  }
+}
+Sign in to your account
+ 
+  metrics:
+      prometheus:
+        rules:
+          #- pattern: kafka.(\w+)<type=(.+), name=(.+), (.+)=(.+)><>(Count|Value)
+          #  name: kafka_$1_$2_$3
+          #  cache: true
+          #  labels:
+          #    "$4": "$5"
+ 
+          - pattern: kafka.server<type=ReplicaManager, name=(.+)><>(Count|Value)
+            name: kafka_server_replicamanager_$1
+ 
+          #This can be more narrowed down to name=ActiveControllerCount
+          - pattern: kafka.controller<type=KafkaController, name=(.+)><>(Count|Value)
+            name: kafka_controller_kafkacontroller_$1
+ 
+          - pattern: kafka.controller<type=ControllerStats, name=(.+)><>(Count|Value)
+            name: kafka_controller_controllerstats_$1
+ 
+        # Broker  Metrics
+          - pattern : 'kafka.server<type=BrokerTopicMetrics, name=(MessagesInPerSec|BytesInPerSec|BytesOutPerSec)><>(Count|OneMinuteRate|FiveMinuteRate|FifteenMinuteRate)'
+            name: kafka_server_brokertopicmetrics_$1_$2_alltopics
+            type: GAUGE
+ 
+          #- pattern : 'kafka.server<type=BrokerTopicMetrics, name=(MessagesInPerSec|BytesInPerSec|BytesOutPerSec|TotalProduceRequestsPerSec|TotalFetchRequestsPerSec), topic=(.+)><>(Count|OneMinuteRate|FiveMinuteRate|FifteenMinuteRate)'
+          - pattern : 'kafka.server<type=BrokerTopicMetrics, name=(MessagesInPerSec|BytesInPerSec|BytesOutPerSec|TotalProduceRequestsPerSec|TotalFetchRequestsPerSec), topic=(.+)><>(Count|OneMinuteRate)'  
+            name: kafka_server_brokertopicmetrics_$1_$3
+            type: GAUGE
+            cache: true
+            labels:
+              topic: "$2"
+          
+          - pattern: kafka.server<type=KafkaRequestHandlerPool, name=RequestHandlerAvgIdlePercent><>OneMinuteRate
+            name: kafka_server_kafkarequesthandlerpool_requesthandleravgidlepercent_total
+            type: GAUGE
+ 
+          #- pattern: kafka.(\w+)<type=(.+), name=(.+)><>(Count|Value)
+          #  name: kafka_$1_$2_$3  
+ 
+          - pattern: kafka.network<type=SocketServer, name=NetworkProcessorAvgIdlePercent><>(Count|Value)
+            name: kafka_network_socketserver_networkprocessoravgidlepercent
+ 
+          # Network Request  Metrics
+          - pattern: kafka.network<type=RequestChannel, name=RequestQueueSize><>(Count|Value)
+            name: kafka_network_requestchannel_requestqueuesize
+ 
+          #- pattern : 'kafka.network<type=RequestMetrics, name=RequestsPerSec, request=(.+), version=([0-9]+)><>(Count|OneMinuteRate|FiveMinuteRate|FifteenMinuteRate)'
+          #  name: kafka_network_requestmetrics_requestspersec_$3
+          #  type: GAUGE
+          #  cache: true
+          #  labels:
+          #    request: "$1"
+ 
+          #- pattern: kafka.network<type=RequestMetrics, name=(.+), (.+)=(.+), (.+)=(.+)><>(Count|Value)
+          #  name: kafka_network_requestmetrics_$1
+          #  cache: true
+          #  labels:
+          #    "$2": "$3"
+          #    "$4": "$5"
+ 
+          #- pattern: kafka.network<type=RequestMetrics, name=(.+), (.+)=(.*)><>(\d+)thPercentile
+          - pattern: kafka.network<type=RequestMetrics, name=TotalTimeMs, request=(Produce|FetchFollower|FetchConsumer)><>(\d+)thPercentile
+            name: kafka_network_requestmetrics_totaltimems
+            type: GAUGE
+            cache: true
+            labels:
+              request: "$1"
+              quantile: "0.$2"
+          
+          - pattern: io.confluent.caas<type=VolumeMetrics, (.+)=(.+), (.+)=(.+)><>(Used|PercentUsed|PercentAvailable|Total)
+            name: io_confluent_caas_volumemetrics_$5
+            type: GAUGE
+            labels:
+              "$1": "$2"
+              "$3": "$4"

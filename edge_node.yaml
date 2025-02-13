@@ -1,0 +1,106 @@
+apiVersion: platform.confluent.io/v1beta1
+kind: KRaftController
+metadata:
+  name: kafka
+  namespace: confluent
+spec:
+  replicas: 1
+  image:
+    application: docker.io/confluentinc/cp-server:7.8.0
+    init: confluentinc/confluent-init-container:2.10.0
+  dataVolumeCapacity: 10Gi
+  podTemplate:
+    resources:
+      requests:
+        cpu: "4"
+        memory: "4Gi"
+      limits:
+        cpu: "8"
+        memory: "8Gi"
+    podSecurityContext:
+      fsGroup: 1000
+      runAsUser: 1000
+      runAsNonRoot: true
+  configOverrides:
+    server:
+    - process.roles=broker,controller
+    - node.id=1
+    - broker.id=1
+    - controller.quorum.voters=1@localhost:9074
+    - listeners=BROKER://:9092,CONTROLLER://:9074
+    - advertised.listeners=BROKER://localhost:9092
+    - inter.broker.listener.name=BROKER
+    - controller.listener.names=CONTROLLER
+    - listener.security.protocol.map=BROKER:PLAINTEXT,CONTROLLER:PLAINTEXT
+    - replication.factor=1
+    - default.replication.factor=1
+    - confluent.cluster.link.metadata.topic.replication.factor=1
+    - confluent.balancer.topic.replication.factor=1
+    - confluent.license.topic.replication.factor=1
+    - confluent.metadata.topic.replication.factor=1
+    - confluent.security.event.logger.exporter.kafka.topic.replicas=1
+    - num.partitions=1
+    - offsets.topic.replication.factor=1
+    - transaction.state.log.min.isr=1
+    - transaction.state.log.replication.factor=1
+    - confluent.balancer.enable=false
+    - confluent.telemetry.enabled=false
+    - confluent.reporters.telemetry.auto.enable=false
+    - confluent.metadata.server.kraft.controller.enabled=true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-service
+  namespace: confluent
+spec:
+  selector:
+    app: kafka
+  type: LoadBalancer
+  ports:
+    - name: broker
+      protocol: TCP
+      port: 9092
+      targetPort: 9092
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /mnt/data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - kafka
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: local-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-storage
