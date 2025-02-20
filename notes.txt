@@ -1,16 +1,59 @@
-minikube start
-
-NAMESPACE="confluent"
+NAMESPACE="sainsburys"
 
 kubectl create namespace $NAMESPACE
 kubectl config set-context --current --namespace=$NAMESPACE
 
 helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes --namespace $NAMESPACE --set kRaftEnabled=true
 
+mkdir oauth-cluster
+
+TUTORIAL_HOME=./oauth-cluster/
+   openssl genrsa -out $TUTORIAL_HOME/ca-key.pem 2048
+   openssl req -new -key $TUTORIAL_HOME/ca-key.pem -x509 \
+      -days 1000 \
+      -out $TUTORIAL_HOME/ca.pem \
+      -subj "/C=US/ST=CA/L=MountainView/O=Confluent/OU=Operator/CN=TestCA"
+
+kubectl create secret tls ca-pair-sslcerts \
+   --cert=$TUTORIAL_HOME/ca.pem \
+   --key=$TUTORIAL_HOME/ca-key.pem
+
+keytool -importcert -alias sainsburys -file ./oauth-cluster/ca.pem -keystore ./oauth-cluster/truststore.jks -storepass mystorepassword
+
+cat <<-EOF > ./sslcli.properties
+bootstrap.servers=localhost:9092
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=kafka password=kafka-secret;
+   sasl.mechanism=PLAIN
+   security.protocol=SASL_SSL
+   ssl.truststore.location=./oauth-cluster/truststore.jks
+   ssl.truststore.password=mystorepassword
+EOF
+
+bootstrap=localhost:9092
+
 kubectl apply -f edge_node.yaml --namespace $NAMESPACE
 kubectl get pods
 
-kubectl port-forward pod/kafka-0 9092:9092
+kafka-topics --list \
+  --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties
+
+kafka-acls --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties \
+  --add \
+  --allow-principal "User:kafka_client" \
+  --operation All \
+  --topic '*' \
+  --group '*'
+
+kafka-acls --bootstrap-server $bootstrap \
+  --command-config /tmp/sslcli.properties \
+  --list
+
+
+
+
+
 
 kafka-topics --bootstrap-server localhost:9092 --list
 kafka-topics --create --topic test-topic --bootstrap-server localhost:9092
@@ -23,5 +66,3 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic test-topic
 kubectl config set-context --current --namespace=$NAMESPACE
 kubectl delete -f edge_node.yaml --namespace $NAMESPACE
 helm uninstall confluent-operator
-
-minikube stop
