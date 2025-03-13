@@ -5,10 +5,10 @@ metadata:
   name: kafka
   namespace: sainsburys
 spec:
-  dataVolumeCapacity: 100G
+  dataVolumeCapacity: 10G
   image:
     application: docker.io/confluentinc/cp-server:7.9.0
-    init: confluentinc/confluent-init-container:2.11.0
+    init: docker.io/confluentinc/confluent-init-container:2.11.0
   replicas: 1
 
   configOverrides:
@@ -39,7 +39,6 @@ spec:
       # Allow ACLs
       - authorizer.class.name=io.confluent.kafka.security.authorizer.ConfluentServerAuthorizer
       - allow.everyone.if.no.acl.found=false
-      - confluent.authorizer.access.rule.providers=KRAFT_ACL
 
       # KRaft listener
       - listener.name.controller.plain.sasl.jaas.config=io.confluent.kafka.server.plugins.auth.FileBasedLoginModule required username="${file:/mnt/secrets/kafka-controller-listener-apikeys/plain.txt:username}" password="${file:/mnt/secrets/kafka-controller-listener-apikeys/plain.txt:password}" config_path="/mnt/secrets/kafka-controller-listener-apikeys/apikeys.json" refresh_ms="3000";
@@ -99,11 +98,11 @@ spec:
   podTemplate:
     resources:
       limits:
-        cpu: 16000m
-        memory: 32Gi
-      requests:
-        cpu: 8000m
+        cpu: 3000m
         memory: 16Gi
+      requests:
+        cpu: 2000m
+        memory: 8Gi
 
     podSecurityContext:
       fsGroup: 1000
@@ -112,18 +111,6 @@ spec:
 
   metricReporter:
     enabled: false
-
----
-apiVersion: platform.confluent.io/v1beta1
-kind: KafkaRestClass
-metadata:
-  name: krc-cfk
-  namespace: sainsburys
-spec:
-  kafkaClusterRef:
-    name: kafka
-  kafkaRest:
-    endpoint: http://kafka.sainsburys.svc.cluster.local:8090
 
 ---
 apiVersion: v1

@@ -92,9 +92,13 @@ kubectl apply -f confluent_platform.yaml --namespace $NAMESPACE
 ```
 
 After that wait for the kafka-0 pod to be running and without errors.
-
 ```bash
 kubectl get pods -n $NAMESPACE
+```
+
+Make sure the CP Kafka cluster has a SSL certificate attached to it:
+```bash
+openssl s_client -connect local.kafka.sainsburys:9092 -servername local.kafka.sainsburys 
 ```
 
  5.3 Topics
