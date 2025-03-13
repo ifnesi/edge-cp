@@ -1,4 +1,5 @@
 import socket
+import uuid
 
 from confluent_kafka import Producer
 
@@ -9,8 +10,8 @@ producer = Producer(
         "bootstrap.servers": "local.kafka.sainsburys:9092",
         "security.protocol": "SASL_SSL",
         "sasl.mechanism": "PLAIN",
-        "sasl.username": "kafka",
-        "sasl.password": "kafka-secret",
+        "sasl.username": "catalina-001",
+        "sasl.password": "catalina-001-secret",
         "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/ca.pem",
         "ssl.endpoint.identification.algorithm": "none",
         "client.id": socket.gethostname(),
@@ -28,10 +29,11 @@ def acked(err, msg):
 
 # Produce messages
 for n in range(10):
+    key = uuid.uuid4().hex
     producer.produce(
-        "demotopic",
-        key=str(n),
-        value=f"Test message {n}",
+        "catalina.test",
+        key=key,
+        value=f"Test message: {key}",
         callback=acked,
     )
     producer.poll(0)

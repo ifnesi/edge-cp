@@ -98,7 +98,7 @@ kubectl get pods -n $NAMESPACE
 
 Make sure the CP Kafka cluster has a SSL certificate attached to it:
 ```bash
-openssl s_client -connect local.kafka.sainsburys:9092 -servername local.kafka.sainsburys 
+openssl s_client -connect local.kafka.sainsburys:9092 -servername local.kafka.sainsburys
 ```
 
  5.3 Topics
@@ -106,10 +106,16 @@ openssl s_client -connect local.kafka.sainsburys:9092 -servername local.kafka.sa
 This CRD can be used as a template for topics creation.
 
 ```bash
-kubectl apply -f topics.yaml -n $NAMESPACE
+kubectl apply -f topic-demotopic.yaml -n $NAMESPACE
 ```
 
 List topics:
+
+The kafka CLI will only work with Java 17. If you have v21 installed, try setting 17 temporarely:
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+```
+
 ```bash
 kafka-topics --list \
   --bootstrap-server $bootstrap \
@@ -144,15 +150,50 @@ kafka-acls --bootstrap-server $bootstrap \
   --add \
   --allow-principal "User:catalina-001" \
   --operation All \
-  --topic 'catalina*' \
+  --topic 'catalina' \
+  --resource-pattern-type prefixed \
   --group '*'
+
+kafka-acls --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties \
+  --add \
+  --allow-principal "User:catalina-001" \
+  --operation Describe \
+  --cluster
+
+kafka-acls --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties \
+  --add \
+  --allow-principal User:catalina-001 \
+  --operation All \
+  --group catalina-consumer-group
+```
+
+Consumer Test (Python):
+```bash
+python3 consumer.py
+```
+
+Producer Test (Python):
+```bash
+python3 producer.py
+```
+
+To remove the ACLs for a given user (see example for `catalina-001`):
+```bash
+kafka-acls --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties \
+  --remove \
+  --allow-principal "User:catalina-001" \
+  --group '*' \
+  --force
 ```
 
 ## Tearing it down
 ```bash
 NAMESPACE="sainsburys"
 kubectl config set-context --current --namespace=$NAMESPACE
-kubectl delete -f topics.yaml -n $NAMESPACE
+kubectl delete -f topic-demotopic.yaml -n $NAMESPACE
 kubectl delete -f confluent_platform.yaml --namespace $NAMESPACE
 kubectl delete -f secrets.yaml -n $NAMESPACE
 helm uninstall confluent-operator
