@@ -209,6 +209,7 @@ kafka-acls --bootstrap-server $bootstrap \
 ```bash
 NAMESPACE="sainsburys"
 kubectl config set-context --current --namespace=$NAMESPACE
+kubectl delete -f topic-catalina.yaml -n $NAMESPACE
 kubectl delete -f topic-demotopic.yaml -n $NAMESPACE
 kubectl delete -f confluent_platform.yaml --namespace $NAMESPACE
 kubectl delete -f secrets.yaml -n $NAMESPACE
