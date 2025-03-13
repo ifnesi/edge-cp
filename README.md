@@ -27,9 +27,10 @@
 
 This deployment utilises [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) to apply the necessary CRD/YAML files for deploying Confluent Platform on Kubernetes. The target environment is **Azure Kubernetes Service (AKS)**. Before proceeding, ensure that kubectl is correctly configured to interact with your AKS cluster. This includes setting up kubectl with the appropriate Azure credentials and context.
 
-1. Create Namespace
+1. Create Env Vars and Namespace
 
 ```bash
+bootstrap=local.kafka.sainsburys:9092
 NAMESPACE="sainsburys"
 kubectl create namespace $NAMESPACE
 kubectl config set-context --current --namespace=$NAMESPACE
@@ -69,10 +70,25 @@ keytool -list -keystore $TUTORIAL_HOME/truststore.jks -storepass mystorepassword
 
 4. Endpoint
 
-The bootstrap endpoint used in this deployment is a placeholder and will not resolve automatically. To ensure proper connectivity, you must manually register it in your `/etc/hosts` file. This involves mapping the bootstrap hostname to the appropriate IP address of your AKS cluster. Without this step, clients and components may fail to communicate with the Confluent Platform.
+The bootstrap endpoint used in this deployment is a placeholder and will not resolve automatically. To ensure proper connectivity, you must manually register it in the `/etc/hosts` file. This involves mapping the bootstrap hostname to the appropriate IP address of your AKS cluster. Without this step, clients and components may fail to communicate with the Confluent Platform.
 
+To know what is the external IP address assigned to the kafka-service, run the following command:
 ```bash
-bootstrap=local.kafka.sainsburys:9092
+kubectl get svc -n $NAMESPACE
+```
+
+Response example:
+```bash
+NAME                 TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)                                        AGE
+confluent-operator   ClusterIP      10.0.234.251   <none>          7778/TCP                                       81m
+kafka                ClusterIP      None           <none>          9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   68m
+kafka-0-internal     ClusterIP      10.0.49.159    <none>          9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   68m
+kafka-service        LoadBalancer   10.0.226.35    51.141.84.215   9092:32382/TCP                                 68m
+```
+
+For the example above, the following line needs to be added in the `/etc/hosts` file:
+```bash
+51.141.84.215    local.kafka.sainsburys 
 ```
 
 5. Apply CRDs
@@ -111,18 +127,19 @@ kubectl apply -f topic-demotopic.yaml -n $NAMESPACE
 
 List topics:
 
-The kafka CLI will only work with Java 17. If you have v21 installed, try setting 17 temporarely:
+The kafka CLI will only work with Java 17. If you have v21 installed, try setting it to v17 temporarely:
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 ```
 
+List topics:
 ```bash
 kafka-topics --list \
   --bootstrap-server $bootstrap \
   --command-config ./sslcli.properties
 ```
 
-Execute Performance Tests
+Execute Performance Tests:
 ```bash
 kafka-producer-perf-test \
    --topic demotopic \
@@ -135,15 +152,14 @@ kafka-producer-perf-test \
 
  5.4 ACLs
 
-List ACLs
-
+List ACLs:
 ```bash
 kafka-acls --bootstrap-server $bootstrap \
   --command-config ./sslcli.properties \
   --list
 ```
 
-Add ACLs
+Add ACLs:
 ```bash
 kafka-acls --bootstrap-server $bootstrap \
   --command-config ./sslcli.properties \
