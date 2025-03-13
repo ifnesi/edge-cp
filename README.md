@@ -104,7 +104,7 @@ kubectl apply -f secrets.yaml -n $NAMESPACE
  5.2 Confluent Platform
 
 ```bash
-kubectl apply -f confluent_platform.yaml --namespace $NAMESPACE
+kubectl apply -f confluent_platform.yaml -n $NAMESPACE
 ```
 
 After that wait for the kafka-0 pod to be running and without errors.
@@ -211,7 +211,7 @@ NAMESPACE="sainsburys"
 kubectl config set-context --current --namespace=$NAMESPACE
 kubectl delete -f topic-catalina.yaml -n $NAMESPACE
 kubectl delete -f topic-demotopic.yaml -n $NAMESPACE
-kubectl delete -f confluent_platform.yaml --namespace $NAMESPACE
+kubectl delete -f confluent_platform.yaml --n $NAMESPACE
 kubectl delete -f secrets.yaml -n $NAMESPACE
 helm uninstall confluent-operator
 ```
