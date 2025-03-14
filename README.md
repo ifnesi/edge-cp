@@ -131,18 +131,18 @@ kubectl apply -f topic-catalina.yaml -n $NAMESPACE
 Alternativelly, to create a topic using ``, try:
 ```bash
 kafka-topics --create \
-   --topic demo-topic \
+  --topic demo-topic \
   --bootstrap-server $bootstrap \
   --command-config ./sslcli.properties \
-   --partitions 1 \
-   --replication-factor 1
+  --partitions 1 \
+  --replication-factor 1
 
 kafka-topics --create \
-   --topic catalina-test \
+  --topic catalina-test \
   --bootstrap-server $bootstrap \
   --command-config ./sslcli.properties \
-   --partitions 1 \
-   --replication-factor 1
+  --partitions 1 \
+  --replication-factor 1
 ```
 
 List topics:
