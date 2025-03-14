@@ -18,7 +18,7 @@ consumer = Consumer(
     }
 )
 
-consumer.subscribe(["catalina.test"])
+consumer.subscribe(["catalina-test"])
 
 print("Listening for messages...")
 

@@ -1,3 +1,4 @@
+# CRDs for an Edge-CP KRaft+Confluent Server in Combined Mode
 ---
 apiVersion: platform.confluent.io/v1beta1
 kind: KRaftController
@@ -111,6 +112,22 @@ spec:
 
   metricReporter:
     enabled: false
+
+---
+apiVersion: platform.confluent.io/v1beta1
+kind: KafkaRestClass
+metadata:
+  name: krc-cfk
+  namespace: sainsburys
+spec:
+  kafkaClusterRef:
+    name: kafka
+  kafkaRest:
+    endpoint: http://kafka-0.kafka.sainsburys.svc.cluster.local:8090
+    authentication:
+      type: basic
+      basic:
+        secretRef: credential
 
 ---
 apiVersion: v1

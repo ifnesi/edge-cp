@@ -27,7 +27,7 @@
 
 This deployment utilises [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) to apply the necessary CRD/YAML files for deploying Confluent Platform on Kubernetes. The target environment is **Azure Kubernetes Service (AKS)**. Before proceeding, ensure that kubectl is correctly configured to interact with your AKS cluster. This includes setting up kubectl with the appropriate Azure credentials and context.
 
-1. Create Env Vars and Namespace
+### 1. Create Env Vars and Namespace
 
 ```bash
 bootstrap=local.kafka.sainsburys:9092
@@ -36,13 +36,15 @@ kubectl create namespace $NAMESPACE
 kubectl config set-context --current --namespace=$NAMESPACE
 ```
 
-2. Install Confluent Operator
+### 2. Install Confluent Operator
 
 ```bash
-helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes --namespace $NAMESPACE --set kRaftEnabled=true
+helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes \
+  --namespace $NAMESPACE \
+  --set kRaftEnabled=true #--set licenseKey=<CFK license key>
 ```
 
-3. Create SSL Self-Signed Certificate
+### 3. Create SSL Self-Signed Certificate
 
 ```bash
 TUTORIAL_HOME=./sslcerts/
@@ -68,7 +70,28 @@ keytool -importcert -alias $NAMESPACE -file $TUTORIAL_HOME/ca.pem -keystore $TUT
 keytool -list -keystore $TUTORIAL_HOME/truststore.jks -storepass mystorepassword
 ```
 
-4. Endpoint
+### 4. Apply CRDs
+
+#### 4.1 Credentials
+
+The authentication credentials for Confluent Platform are managed via Kubernetes Secrets, as defined in the `secrets.yaml` file. If any changes are required—such as updating passwords, adding new users, or modifying existing credentials—the YAML file must be updated accordingly and reapplied using `kubectl apply -f`. Once the updated Secret is applied, the authentication configuration will be refreshed automatically, as per the `refresh_ms="3000"` setting in the listener configuration. This ensures that the system picks up changes within 3 seconds without requiring a manual restart.
+
+```bash
+kubectl apply -f secrets.yaml -n $NAMESPACE
+```
+
+#### 4.2 Confluent Platform
+
+```bash
+kubectl apply -f confluent_platform.yaml -n $NAMESPACE
+```
+
+After that wait for the kafka-0 pod to be running and without errors.
+```bash
+kubectl get pods -n $NAMESPACE
+```
+
+#### 4.3 Endpoint
 
 The bootstrap endpoint used in this deployment is a placeholder and will not resolve automatically. To ensure proper connectivity, you must manually register it in the `/etc/hosts` file. This involves mapping the bootstrap hostname to the appropriate IP address of your AKS cluster. Without this step, clients and components may fail to communicate with the Confluent Platform.
 
@@ -91,38 +114,35 @@ For the example above, the following line needs to be added in the `/etc/hosts` 
 51.141.84.215    local.kafka.sainsburys 
 ```
 
-5. Apply CRDs
-
- 5.1 Credentials
-
-The authentication credentials for Confluent Platform are managed via Kubernetes Secrets, as defined in the `secrets.yaml` file. If any changes are required—such as updating passwords, adding new users, or modifying existing credentials—the YAML file must be updated accordingly and reapplied using `kubectl apply -f`. Once the updated Secret is applied, the authentication configuration will be refreshed automatically, as per the `refresh_ms="3000"` setting in the listener configuration. This ensures that the system picks up changes within 3 seconds without requiring a manual restart.
-
-```bash
-kubectl apply -f secrets.yaml -n $NAMESPACE
-```
-
- 5.2 Confluent Platform
-
-```bash
-kubectl apply -f confluent_platform.yaml -n $NAMESPACE
-```
-
-After that wait for the kafka-0 pod to be running and without errors.
-```bash
-kubectl get pods -n $NAMESPACE
-```
-
 Make sure the CP Kafka cluster has a SSL certificate attached to it:
 ```bash
 openssl s_client -connect local.kafka.sainsburys:9092 -servername local.kafka.sainsburys
 ```
 
- 5.3 Topics
+#### 4.4 Topics
 
 This CRD can be used as a template for topics creation.
 
 ```bash
-kubectl apply -f topic-demotopic.yaml -n $NAMESPACE
+kubectl apply -f topic-demo.yaml -n $NAMESPACE
+kubectl apply -f topic-catalina.yaml -n $NAMESPACE
+```
+
+Alternativelly, to create a topic using ``, try:
+```bash
+kafka-topics --create \
+   --topic demo-topic \
+  --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties \
+   --partitions 1 \
+   --replication-factor 1
+
+kafka-topics --create \
+   --topic catalina-test \
+  --bootstrap-server $bootstrap \
+  --command-config ./sslcli.properties \
+   --partitions 1 \
+   --replication-factor 1
 ```
 
 List topics:
@@ -142,7 +162,7 @@ kafka-topics --list \
 Execute Performance Tests:
 ```bash
 kafka-producer-perf-test \
-   --topic demotopic \
+   --topic demo-topic \
    --num-records 20000 \
    --record-size 10000 \
    --throughput -1 \
@@ -150,7 +170,7 @@ kafka-producer-perf-test \
    --producer-props bootstrap.servers=local.kafka.sainsburys:9092 batch.size=100
 ```
 
- 5.4 ACLs
+#### 4.5 ACLs
 
 List ACLs:
 ```bash
@@ -210,8 +230,8 @@ kafka-acls --bootstrap-server $bootstrap \
 NAMESPACE="sainsburys"
 kubectl config set-context --current --namespace=$NAMESPACE
 kubectl delete -f topic-catalina.yaml -n $NAMESPACE
-kubectl delete -f topic-demotopic.yaml -n $NAMESPACE
-kubectl delete -f confluent_platform.yaml --n $NAMESPACE
+kubectl delete -f topic-demo.yaml -n $NAMESPACE
+kubectl delete -f confluent_platform.yaml -n $NAMESPACE
 kubectl delete -f secrets.yaml -n $NAMESPACE
 helm uninstall confluent-operator
 ```

@@ -1,11 +1,12 @@
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaTopic
 metadata:
-  name: catalina.test
+  name: catalina-test-4
   namespace: sainsburys
 spec:
   kafkaRestClassRef:
-    name: krc-cfk
+    name: kafka
+    namespace: sainsburys
   replicas: 1
   partitionCount: 1
   configs:

@@ -31,7 +31,7 @@ def acked(err, msg):
 for n in range(10):
     key = uuid.uuid4().hex
     producer.produce(
-        "catalina.test",
+        "catalina-test",
         key=key,
         value=f"Test message: {key}",
         callback=acked,
