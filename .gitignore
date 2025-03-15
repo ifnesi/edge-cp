@@ -1,4 +1,4 @@
-sslcerts/*
+sslcerts/
 
 .DS_Store
 sainsburys-poc
