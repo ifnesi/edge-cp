@@ -1,0 +1,33 @@
+[ req ]
+default_bits       = 2048
+default_keyfile    = privkey.pem
+distinguished_name = req_distinguished_name
+x509_extensions    = v3_ca
+prompt             = no
+encrypt_key        = no
+
+[ req_distinguished_name ]
+C  = US
+ST = CA
+L  = MountainView
+O  = Kafka
+OU = Broker
+CN = local.kafka.sainsburys-poc
+
+[ v3_ca ]
+subjectAltName = @alt_names
+basicConstraints = critical,CA:true
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = b0.local.kafka.sainsburys-poc
+DNS.2 = b1.local.kafka.sainsburys-poc
+DNS.3 = b2.local.kafka.sainsburys-poc
+DNS.4 = local.kafka.sainsburys-poc
