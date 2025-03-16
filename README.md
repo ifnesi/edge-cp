@@ -122,12 +122,12 @@ Response (example):
 ```bash
 NAME                                 READY   STATUS     RESTARTS   AGE
 confluent-operator-9876f6577-gwms5   1/1     Running    0          2m59s
-kafka-0                              0/1     Running    0          9s
-kafka-1                              0/1     Running    0          9s
-kafka-2                              0/1     Running    0          9s
-kraftcontroller-0                    1/1     Running    0          70s
-kraftcontroller-1                    1/1     Running    0          70s
-kraftcontroller-2                    1/1     Running    0          70s
+kafka-0                              1/1     Running    0          89s
+kafka-1                              1/1     Running    0          89s
+kafka-2                              1/1     Running    0          89s
+kraftcontroller-0                    1/1     Running    0          170s
+kraftcontroller-1                    1/1     Running    0          170s
+kraftcontroller-2                    1/1     Running    0          170s
 ```
 
 #### 2.6.2 Endpoint
@@ -142,30 +142,30 @@ kubectl get svc -n $NAMESPACE
 Response (example):
 ```bash
 NAME                            TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)                                                                   AGE
-confluent-operator              ClusterIP      10.0.119.133   <none>           7778/TCP                                                                  137m
-kafka                           ClusterIP      None           <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-0-internal                ClusterIP      10.0.14.31     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-0-lb                      LoadBalancer   10.0.195.161   51.137.148.45    9092:31329/TCP                                                            80s
-kafka-1-internal                ClusterIP      10.0.92.38     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-1-lb                      LoadBalancer   10.0.131.29    51.137.148.244   9092:31010/TCP                                                            80s
-kafka-2-internal                ClusterIP      10.0.122.89    <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-2-lb                      LoadBalancer   10.0.67.39     51.137.145.178   9092:32329/TCP                                                            80s
-kafka-bootstrap-lb              LoadBalancer   10.0.82.251    51.137.150.177   9092:30994/TCP                                                            80s
-kafka-kafka-rest-bootstrap-lb   LoadBalancer   10.0.37.57     20.162.86.207    443:32699/TCP                                                             80s
-kraftcontroller                 ClusterIP      None           <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
-kraftcontroller-0-internal      ClusterIP      10.0.120.25    <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
-kraftcontroller-1-internal      ClusterIP      10.0.8.218     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
-kraftcontroller-2-internal      ClusterIP      10.0.12.17     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
+confluent-operator              ClusterIP      10.0.104.234   <none>           7778/TCP                                                                  4h19m
+kafka                           ClusterIP      None           <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
+kafka-0-internal                ClusterIP      10.0.195.238   <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
+kafka-0-lb                      LoadBalancer   10.0.91.139    51.137.132.62    9092:31947/TCP                                                            47s
+kafka-1-internal                ClusterIP      10.0.7.224     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
+kafka-1-lb                      LoadBalancer   10.0.60.103    51.137.132.75    9092:32304/TCP                                                            47s
+kafka-2-internal                ClusterIP      10.0.200.141   <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
+kafka-2-lb                      LoadBalancer   10.0.7.198     51.137.132.245   9092:31897/TCP                                                            47s
+kafka-bootstrap-lb              LoadBalancer   10.0.84.162    51.137.157.215   9092:30812/TCP                                                            47s
+kafka-kafka-rest-bootstrap-lb   LoadBalancer   10.0.78.63     51.137.155.27    8090:32524/TCP                                                            47s
+kraftcontroller                 ClusterIP      None           <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
+kraftcontroller-0-internal      ClusterIP      10.0.105.126   <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
+kraftcontroller-1-internal      ClusterIP      10.0.9.181     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
+kraftcontroller-2-internal      ClusterIP      10.0.32.9      <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
 ```
 
 Alternatively, run the script `etc_hosts.sh` to printout the entries required for `/etc/hosts`. See below example for a three brokers cluster:
 ```bash
 # Entries for /etc/hosts:
-51.137.148.45 b0.local.kafka.sainsburys-poc
-51.137.148.244 b1.local.kafka.sainsburys-poc
-51.137.145.178 b2.local.kafka.sainsburys-poc
-51.137.150.177 local.kafka.sainsburys-poc
-20.162.86.207 kafka.local.kafka.sainsburys-poc
+51.137.132.62 b0.local.kafka.sainsburys-poc
+51.137.132.75 b1.local.kafka.sainsburys-poc
+51.137.132.245 b2.local.kafka.sainsburys-poc
+51.137.157.215 local.kafka.sainsburys-poc
+51.137.155.27 kafka.local.kafka.sainsburys-poc
 ```
 
 Make sure the CP Kafka cluster (Loadbalancer) has a SSL certificate attached to it:
