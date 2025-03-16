@@ -72,11 +72,13 @@ mkdir $CERTS_FOLDER
 echo "jksPassword="$JKS_PASSWORD | tr -d '\n' > $CERTS_FOLDER/jksPassword.txt
 
 openssl genrsa -out $CERTS_FOLDER/ca-key.pem 2048
-openssl req -new -key $CERTS_FOLDER/ca-key.pem -x509 \
+openssl req -new -x509 \
   -days 3650 \
+  -key $CERTS_FOLDER/ca-key.pem \
   -out $CERTS_FOLDER/ca.pem \
-  -subj "/C=GB/ST=GreaterLondon/L=London/O=Sainsburys/OU=Engineering/CN="$DOMAIN \
-  -addext "subjectAltName = DNS:"$DOMAIN", DNS:*."$DOMAIN
+  -batch \
+  -config openssl.cnf \
+  -extensions v3_req
 
 kubectl delete secret ca-pair-sslcerts -n $NAMESPACE 2> /dev/null
 kubectl create secret tls ca-pair-sslcerts \
@@ -89,7 +91,7 @@ kubectl patch secret ca-pair-sslcerts \
   -n $NAMESPACE
 
 keytool -delete -alias $NAMESPACE -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD 2> /dev/null
-keytool -importcert -alias $NAMESPACE -file $CERTS_FOLDER/ca.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
+keytool -importcert -trustcacerts -alias $NAMESPACE -file $CERTS_FOLDER/ca.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
 keytool -list -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD
 ```
 
@@ -180,6 +182,47 @@ curl -v -k "https://$REST_DOMAIN:8090/kafka/v3/clusters" -u kafka:kafka-secret -
 
 Response (example):
 ```bash
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1262    0  1262    0     0  18222      0 --:--:-- --:--:-- --:--:-- 18289
+{
+  "kind": "KafkaClusterList",
+  "metadata": {
+    "self": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters",
+    "next": null
+  },
+  "data": [
+    {
+      "kind": "KafkaCluster",
+      "metadata": {
+        "self": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001",
+        "resource_name": "crn:///kafka=SainsburysCPEdgePoC001"
+      },
+      "cluster_id": "SainsburysCPEdgePoC001",
+      "controller": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/brokers/0"
+      },
+      "acls": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/acls"
+      },
+      "brokers": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/brokers"
+      },
+      "broker_configs": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/broker-configs"
+      },
+      "consumer_groups": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/consumer-groups"
+      },
+      "topics": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics"
+      },
+      "partition_reassignments": {
+        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/-/partitions/-/reassignment"
+      }
+    }
+  ]
+}
 ```
 
 #### 2.6.3 Topics
