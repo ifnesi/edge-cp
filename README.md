@@ -1,4 +1,4 @@
-# Edge Confluent Platform
+# Edge Confluent Platform - PoC for Sainsburys/UK
 
 ## 1. Requirements and Assumptions
 - No REST Proxy (producers/consumers to use the Kafka protocol)
