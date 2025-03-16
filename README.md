@@ -1,6 +1,6 @@
 # Edge Confluent Platform
 
-## Requirements and Assumptions
+## 1. Requirements and Assumptions
 - No REST Proxy (producers/consumers to use the Kafka protocol)
 - No C3, ksqlDB, and Schema Registry
 - Only KRaft + Confluent Server v7.9.0 (or latest) in combined mode
@@ -23,23 +23,29 @@
 - Persistent storage (depends on a suitable Storage class)
 - No need for the metric reporter
 
-## Deploying the Edge-CP Platform
+## 2. Deploying the Edge-CP Platform
 
 This deployment utilises [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) to apply the necessary CRD/YAML files for deploying Confluent Platform on Kubernetes. The target environment is **Azure Kubernetes Service (AKS)**. Before proceeding, ensure that kubectl is correctly configured to interact with your AKS cluster. This includes setting up kubectl with the appropriate Azure credentials and context.
 
-### 1. Create Env Vars and K8s Namespace
+### 2.1 Define Env Vars
 
 ```bash
-export bootstrap=local.kafka.sainsburys-poc:9092
 export NAMESPACE="sainsburys-poc"
-export CERTS_FOLDER=./sslcerts/
-export CREDENTIALS_FOLDER=./credentials/
-export JKS_PASSWORD=mystorepassword
-kubectl create namespace $NAMESPACE
+export DOMAIN="local.kafka."$NAMESPACE
+export BOOTSTRAP=$DOMAIN":9092"
+export CERTS_FOLDER="./sslcerts/"
+export CREDENTIALS_FOLDER="./credentials/"
+export JKS_PASSWORD="mystorepassword"
+```
+
+### 2.2 Create K8s Namespace
+
+```bash
+kubectl create namespace $NAMESPACE 2> /dev/null
 kubectl config set-context --current --namespace=$NAMESPACE
 ```
 
-### 2. Install Confluent Operator
+### 2.3 Install Confluent Operator
 
 ```bash
 helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes \
@@ -47,57 +53,45 @@ helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes 
   --set kRaftEnabled=true #--set licenseKey=<CFK license key>
 ```
 
-### 3. Create SSL Self-Signed Certificate
+### 2.4 Create SSL Self-Signed Certificate
 
 ```bash
+rm -rf $CERTS_FOLDER 2> /dev/null
 mkdir $CERTS_FOLDER
 
 openssl genrsa -out $CERTS_FOLDER/ca-key.pem 2048
 openssl req -new -key $CERTS_FOLDER/ca-key.pem -x509 \
   -days 1000 \
   -out $CERTS_FOLDER/ca.pem \
-  -subj "/C=US/ST=CA/L=MountainView/O=Kafka/OU=Broker/CN=TestCA" \
-  -config openssl.cnf
+  -subj "/C=GB/ST=GreaterLondon/L=London/O=Sainsburys/OU=Engineering/CN="$DOMAIN \
+  -addext "subjectAltName = DNS:"$DOMAIN", DNS:*."$DOMAIN
 
-openssl req -new -newkey rsa:2048 -nodes \
-   -keyout $CERTS_FOLDER/kafka-key.pem \
-   -out $CERTS_FOLDER/kafka-csr.pem \
-   -config openssl.cnf
-openssl x509 -req -in $CERTS_FOLDER/kafka-csr.pem \
-   -CA $CERTS_FOLDER/ca.pem -CAkey $CERTS_FOLDER/ca-key.pem \
-   -CAcreateserial -out $CERTS_FOLDER/kafka-cert.pem \
-   -days 1000 -sha256 -extfile openssl.cnf \
-   -extensions v3_req
-
-kubectl delete secret ca-pair-sslcerts -n $NAMESPACE
+kubectl delete secret ca-pair-sslcerts -n $NAMESPACE 2> /dev/null
 kubectl create secret tls ca-pair-sslcerts \
-   --cert=$CERTS_FOLDER/kafka-cert.pem \
-   --key=$CERTS_FOLDER/kafka-key.pem \
+   --cert=$CERTS_FOLDER/ca.pem \
+   --key=$CERTS_FOLDER/ca-key.pem \
    -n $NAMESPACE
 
-keytool -list -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD
-
-keytool -delete -alias $NAMESPACE -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD
+keytool -delete -alias $NAMESPACE -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD 2> /dev/null
 keytool -importcert -alias $NAMESPACE -file $CERTS_FOLDER/ca.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
-
 keytool -list -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD
 ```
 
-### 4. Credentials
+### 2.5 Credentials
 
 The authentication credentials for Confluent Platform are managed via Kubernetes Secrets, as defined in the `secrets.yaml` file. If any changes are required—such as updating passwords, adding new users, or modifying existing credentials—the YAML file must be updated accordingly and reapplied using `kubectl apply -f`. Once the updated Secret is applied, the authentication configuration will be refreshed automatically, as per the `refresh_ms="3000"` setting in the listener configuration. This ensures that the system picks up changes within 3 seconds without requiring a manual restart.
 
 ```bash
-kubectl delete secrets credential -n $NAMESPACE
+kubectl delete secrets credential -n $NAMESPACE 2> /dev/null
 kubectl create secret generic credential \
   --from-file=plain.txt=$CREDENTIALS_FOLDER/plain.txt \
   --from-file=plain-users.json=$CREDENTIALS_FOLDER/plain-users.json \
   --from-file=basic.txt=$CREDENTIALS_FOLDER/basic.txt -n $NAMESPACE
 ```
 
-### 5. Apply CRDs
+### 2.6 Apply CRDs
 
-#### 5.1 Confluent Platform
+#### 2.6.1 Confluent Platform
 
 ```bash
 kubectl apply -f confluent_platform_HA.yaml -n $NAMESPACE
@@ -108,7 +102,7 @@ After that wait for the kafka-0 pod to be running and without errors.
 kubectl get pods -n $NAMESPACE
 ```
 
-#### 5.2 Endpoint
+#### 2.6.2 Endpoint
 
 The bootstrap endpoint used in this deployment is a placeholder and will not resolve automatically. To ensure proper connectivity, you must manually register it in the `/etc/hosts` file. This involves mapping the bootstrap hostname to the appropriate IP address of your AKS cluster. Without this step, clients and components may fail to communicate with the Confluent Platform.
 
@@ -149,7 +143,7 @@ Make sure the CP Kafka cluster (Loadbalancer) has a SSL certificate attached to 
 openssl s_client -connect local.kafka.sainsburys-poc:9092 -servername local.kafka.sainsburys-poc
 ```
 
-#### 5.3 Topics
+#### 2.6.3 Topics
 
 These CRDs can be used as a template for topics creation.
 
@@ -168,7 +162,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 List topics:
 ```bash
 kafka-topics --list \
-  --bootstrap-server $bootstrap \
+  --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties
 ```
 
@@ -176,14 +170,14 @@ Alternativelly, to create a topic using ``, try:
 ```bash
 kafka-topics --create \
   --topic demo-topic \
-  --bootstrap-server $bootstrap \
+  --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --partitions 1 \
   --replication-factor 1
 
 kafka-topics --create \
   --topic catalina-test \
-  --bootstrap-server $bootstrap \
+  --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --partitions 1 \
   --replication-factor 1
@@ -197,21 +191,21 @@ kafka-producer-perf-test \
    --record-size 10000 \
    --throughput -1 \
    --producer.config ./sslcli.properties \
-   --producer-props bootstrap.servers=local.kafka.sainsburys-poc:9092 batch.size=100 compression.type=lz4
+   --producer-props bootstrap.servers=$BOOTSTRAP batch.size=100 compression.type=lz4
 ```
 
-#### 5.4 ACLs
+#### 2.6.4 ACLs
 
 List ACLs:
 ```bash
-kafka-acls --bootstrap-server $bootstrap \
+kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --list
 ```
 
 Add ACLs:
 ```bash
-kafka-acls --bootstrap-server $bootstrap \
+kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --add \
   --allow-principal "User:catalina-001" \
@@ -220,14 +214,14 @@ kafka-acls --bootstrap-server $bootstrap \
   --resource-pattern-type prefixed \
   --group '*'
 
-kafka-acls --bootstrap-server $bootstrap \
+kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --add \
   --allow-principal "User:catalina-001" \
   --operation Describe \
   --cluster
 
-kafka-acls --bootstrap-server $bootstrap \
+kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --add \
   --allow-principal User:catalina-001 \
@@ -247,7 +241,7 @@ python3 producer.py
 
 To remove the ACLs for a given user (see example for `catalina-001`):
 ```bash
-kafka-acls --bootstrap-server $bootstrap \
+kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --remove \
   --allow-principal "User:catalina-001" \
@@ -255,11 +249,13 @@ kafka-acls --bootstrap-server $bootstrap \
   --force
 ```
 
-## Tearing it down
+## 3. Tearing it down
 ```bash
 kubectl delete -f topic-catalina.yaml -n $NAMESPACE
 kubectl delete -f topic-demo.yaml -n $NAMESPACE
 kubectl delete -f confluent_platform_HA.yaml -n $NAMESPACE
+kubectl delete secret ca-pair-sslcerts -n $NAMESPACE
+kubectl delete secrets credential -n $NAMESPACE
 helm uninstall confluent-operator
 kubectl delete namespace $NAMESPACE
 rm -rf $CERTS_FOLDER

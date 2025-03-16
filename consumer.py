@@ -7,13 +7,12 @@ from confluent_kafka.serialization import StringDeserializer
 consumer = Consumer(
     {
         "bootstrap.servers": "local.kafka.sainsburys-poc:9092",
-        # "security.protocol": "SASL_SSL",
-        "security.protocol": "SASL_PLAINTEXT",
+        "security.protocol": "SASL_SSL",
         "sasl.mechanism": "PLAIN",
         "sasl.username": "catalina-001",
         "sasl.password": "catalina-001-secret",
-        # "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/ca.pem",
-        # "ssl.endpoint.identification.algorithm": "none",
+        "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/ca.pem",
+        "ssl.endpoint.identification.algorithm": "none",
         "client.id": socket.gethostname(),
         "group.id": "catalina-consumer-group",
         "auto.offset.reset": "earliest",
