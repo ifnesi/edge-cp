@@ -1,25 +1,24 @@
 # Edge Confluent Platform - PoC for Sainsburys/UK
 
 ## 1. Requirements and Assumptions
-- No REST Proxy (producers/consumers to use the Kafka protocol)
+- Embedded REST (v3). No REST Proxy (producers/consumers to use the Kafka protocol)
 - No C3, ksqlDB, and Schema Registry
-- Only KRaft + Confluent Server v7.9.0 (or latest)
+- High-Available Kafka Cluster 3x Kraft + 3x Confluent Servers on v7.9.0 (or latest)
   - 8 vCPU
   - 16 GB RAM
-  - 5 TB disk (persistent storage)
+  - 5 TB disk (persistent storage, depending on a suitable Storage class)
   - One single cluster, no DR
 - Single namespace containing the CfK Operator and the CP pod
 - Separate namespace for monitoring (and potentially other agents Sainsbury’s may want to deploy)
-- High-Available Kafka Cluster 3x Kraft + 3x Confluent Servers
 - Self-signed TLS (auto-generated certs)
   - SASL_PLAINTEXT inside the pod (for CONTROLLER and REPLICATION listeners)
+  - SASL_SSL outside the pod (for EXTERNAL listener)
+  - SSL for Embedded REST (v3)
   - No SSL certificate rotation
 - File-based user creds store (SASL_SSL with basic creds for external AuthN)
-- Kafka ACLs
-- No Confluent RBACs
+- Kafka ACLs, but no Confluent RBACs
 - JMX exporter for Prometheus
-- Persistent storage (depends on a suitable Storage class)
-- No need for the Confluent Metrics Reporter
+- No need for the Confluent Metrics/Telemetry Reporter
 
 ## 2. Deploying the Edge-CP Platform
 
