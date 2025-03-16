@@ -246,7 +246,7 @@ kafka-topics --list \
   --command-config ./sslcli.properties
 ```
 
-Alternativelly, to create a topic using ``, try:
+Alternativelly, to create a topic using `kafka-topics(.sh)`, try:
 ```bash
 kafka-topics --create \
   --topic demo-topic \
