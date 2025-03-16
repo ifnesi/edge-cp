@@ -1,7 +1,5 @@
 #!/bin/bash
 
-DOMAIN="${bootstrap%:*}"
-
 # Get all Kafka-related services with LoadBalancer type
 SERVICES=$(kubectl get svc -n $NAMESPACE --no-headers | grep kafka | grep LoadBalancer)
 
