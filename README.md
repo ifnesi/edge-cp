@@ -3,25 +3,23 @@
 ## 1. Requirements and Assumptions
 - No REST Proxy (producers/consumers to use the Kafka protocol)
 - No C3, ksqlDB, and Schema Registry
-- Only KRaft + Confluent Server v7.9.0 (or latest) in combined mode
+- Only KRaft + Confluent Server v7.9.0 (or latest)
   - 8 vCPU
   - 16 GB RAM
   - 5 TB disk (persistent storage)
   - One single cluster, no DR
 - Single namespace containing the CfK Operator and the CP pod
 - Separate namespace for monitoring (and potentially other agents Sainsbury’s may want to deploy)
-- Single node Kraft+Confluent Server (combined mode)
-  - CFK does not currently provide first class support for KRaft combined mode, so it will be required to use configOverrides
-  - Start from the Kraftcontroller CRD as the Kafka CRD requires a 3 node Kraft cluster under CfK
+- High-Available Kafka Cluster 3x Kraft + 3x Confluent Servers
 - Self-signed TLS (auto-generated certs)
-  - SASL_PLAINTEXT inside the pod (for CONTROLLER and REPLICATION listeners), otherwise need to specify FQDNs for host names (or add localhost to SANs...)
+  - SASL_PLAINTEXT inside the pod (for CONTROLLER and REPLICATION listeners)
   - No SSL certificate rotation
 - File-based user creds store (SASL_SSL with basic creds for external AuthN)
 - Kafka ACLs
-- No RBACs
+- No Confluent RBACs
 - JMX exporter for Prometheus
 - Persistent storage (depends on a suitable Storage class)
-- No need for the metric reporter
+- No need for the Confluent Metrics Reporter
 
 ## 2. Deploying the Edge-CP Platform
 
@@ -32,6 +30,7 @@ This deployment utilises [kubectl](https://kubernetes.io/docs/tasks/tools/#kubec
 ```bash
 export NAMESPACE="sainsburys-poc"
 export DOMAIN="local.kafka."$NAMESPACE
+export REST_DOMAIN="kafka."$DOMAIN
 export BOOTSTRAP=$DOMAIN":9092"
 export CERTS_FOLDER="./sslcerts/"
 export CREDENTIALS_FOLDER="./credentials/"
@@ -53,15 +52,28 @@ helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes 
   --set kRaftEnabled=true #--set licenseKey=<CFK license key>
 ```
 
-### 2.4 Create SSL Self-Signed Certificate
+Make sure the confluent-operator pod is running:
+```bash
+kubectl get pods -n $NAMESPACE
+```
+
+Response (example):
+```bash
+NAME                                 READY   STATUS    RESTARTS   AGE
+confluent-operator-9876f6577-gwms5   1/1     Running   0          5s
+```
+
+### 2.4 Create SSL Self-Signed Certificate (Main Domain + wildcard for the SANs)
 
 ```bash
 rm -rf $CERTS_FOLDER 2> /dev/null
 mkdir $CERTS_FOLDER
 
+echo "jksPassword="$JKS_PASSWORD | tr -d '\n' > $CERTS_FOLDER/jksPassword.txt
+
 openssl genrsa -out $CERTS_FOLDER/ca-key.pem 2048
 openssl req -new -key $CERTS_FOLDER/ca-key.pem -x509 \
-  -days 1000 \
+  -days 3650 \
   -out $CERTS_FOLDER/ca.pem \
   -subj "/C=GB/ST=GreaterLondon/L=London/O=Sainsburys/OU=Engineering/CN="$DOMAIN \
   -addext "subjectAltName = DNS:"$DOMAIN", DNS:*."$DOMAIN
@@ -71,6 +83,10 @@ kubectl create secret tls ca-pair-sslcerts \
    --cert=$CERTS_FOLDER/ca.pem \
    --key=$CERTS_FOLDER/ca-key.pem \
    -n $NAMESPACE
+kubectl patch secret ca-pair-sslcerts \
+  --type=merge \
+  -p "{\"data\":{\"jksPassword.txt\":\"$(base64 -i $CERTS_FOLDER/jksPassword.txt | tr -d '\n')\"}}" \
+  -n $NAMESPACE
 
 keytool -delete -alias $NAMESPACE -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD 2> /dev/null
 keytool -importcert -alias $NAMESPACE -file $CERTS_FOLDER/ca.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
@@ -97,9 +113,21 @@ kubectl create secret generic credential \
 kubectl apply -f confluent_platform_HA.yaml -n $NAMESPACE
 ```
 
-After that wait for the kafka-0 pod to be running and without errors.
+Make sure the KRaft + Kafka pods are running:
 ```bash
 kubectl get pods -n $NAMESPACE
+```
+
+Response (example):
+```bash
+NAME                                 READY   STATUS     RESTARTS   AGE
+confluent-operator-9876f6577-gwms5   1/1     Running    0          2m59s
+kafka-0                              0/1     Running    0          9s
+kafka-1                              0/1     Running    0          9s
+kafka-2                              0/1     Running    0          9s
+kraftcontroller-0                    1/1     Running    0          70s
+kraftcontroller-1                    1/1     Running    0          70s
+kraftcontroller-2                    1/1     Running    0          70s
 ```
 
 #### 2.6.2 Endpoint
@@ -111,22 +139,23 @@ To know what are the external IP addresses assigned to the kafka cluster and bro
 kubectl get svc -n $NAMESPACE
 ```
 
-Response example:
+Response (example):
 ```bash
-NAME                         TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)                                                                   AGE
-confluent-operator           ClusterIP      10.0.119.133   <none>           7778/TCP                                                                  137m
-kafka                        ClusterIP      None           <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-0-internal             ClusterIP      10.0.14.31     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-0-lb                   LoadBalancer   10.0.195.161   51.137.148.45    9092:31329/TCP                                                            80s
-kafka-1-internal             ClusterIP      10.0.92.38     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-1-lb                   LoadBalancer   10.0.131.29    51.137.148.244   9092:31010/TCP                                                            80s
-kafka-2-internal             ClusterIP      10.0.122.89    <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
-kafka-2-lb                   LoadBalancer   10.0.67.39     51.137.145.178   9092:32329/TCP                                                            80s
-kafka-bootstrap-lb           LoadBalancer   10.0.82.251    51.137.150.177   9092:30994/TCP                                                            80s
-kraftcontroller              ClusterIP      None           <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
-kraftcontroller-0-internal   ClusterIP      10.0.120.25    <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
-kraftcontroller-1-internal   ClusterIP      10.0.8.218     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
-kraftcontroller-2-internal   ClusterIP      10.0.12.17     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
+NAME                            TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)                                                                   AGE
+confluent-operator              ClusterIP      10.0.119.133   <none>           7778/TCP                                                                  137m
+kafka                           ClusterIP      None           <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
+kafka-0-internal                ClusterIP      10.0.14.31     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
+kafka-0-lb                      LoadBalancer   10.0.195.161   51.137.148.45    9092:31329/TCP                                                            80s
+kafka-1-internal                ClusterIP      10.0.92.38     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
+kafka-1-lb                      LoadBalancer   10.0.131.29    51.137.148.244   9092:31010/TCP                                                            80s
+kafka-2-internal                ClusterIP      10.0.122.89    <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   80s
+kafka-2-lb                      LoadBalancer   10.0.67.39     51.137.145.178   9092:32329/TCP                                                            80s
+kafka-bootstrap-lb              LoadBalancer   10.0.82.251    51.137.150.177   9092:30994/TCP                                                            80s
+kafka-kafka-rest-bootstrap-lb   LoadBalancer   10.0.37.57     20.162.86.207    443:32699/TCP                                                             80s
+kraftcontroller                 ClusterIP      None           <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
+kraftcontroller-0-internal      ClusterIP      10.0.120.25    <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
+kraftcontroller-1-internal      ClusterIP      10.0.8.218     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
+kraftcontroller-2-internal      ClusterIP      10.0.12.17     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              2m21s
 ```
 
 Alternatively, run the script `etc_hosts.sh` to printout the entries required for `/etc/hosts`. See below example for a three brokers cluster:
@@ -136,11 +165,21 @@ Alternatively, run the script `etc_hosts.sh` to printout the entries required fo
 51.137.148.244 b1.local.kafka.sainsburys-poc
 51.137.145.178 b2.local.kafka.sainsburys-poc
 51.137.150.177 local.kafka.sainsburys-poc
+20.162.86.207 kafka.local.kafka.sainsburys-poc
 ```
 
 Make sure the CP Kafka cluster (Loadbalancer) has a SSL certificate attached to it:
 ```bash
-openssl s_client -connect local.kafka.sainsburys-poc:9092 -servername local.kafka.sainsburys-poc
+openssl s_client -connect $BOOTSTRAP -servername $DOMAIN
+```
+
+To test access to the REST Interface (v3), try:
+```bash
+curl -v -k "https://$REST_DOMAIN:8090/kafka/v3/clusters" -u kafka:kafka-secret -H "Accept: application/json" | jq .
+```
+
+Response (example):
+```bash
 ```
 
 #### 2.6.3 Topics
@@ -151,8 +190,6 @@ These CRDs can be used as a template for topics creation.
 kubectl apply -f topic-demo.yaml -n $NAMESPACE
 kubectl apply -f topic-catalina.yaml -n $NAMESPACE
 ```
-
-List topics:
 
 The kafka CLI will only work with Java 17. If you have v21 installed, try setting it to v17 temporarely:
 ```bash

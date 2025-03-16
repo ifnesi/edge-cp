@@ -124,21 +124,26 @@ spec:
             secretRef: credential
     #kafkaRest:
     #  tls:
-    #    enabled: false
+    #    enabled: true
     #  authentication:
     #    type: plain
     #    jaasConfig:
     #      secretRef: credential
 
-  #services:
-  #  kafkaRest:
-  #    tls:
-  #      enabled: false
-  #    externalAccess:
-  #      type: loadBalancer
-  #      loadBalancer:
-  #        domain: local.kafka.sainsburys-poc
-  #        port: 8090
+  services:
+    kafkaRest:
+      tls:
+        enabled: true
+        directoryPathInContainer: /mnt/sslcerts/
+        secretRef: ca-pair-sslcerts
+        jksPassword:
+          secretRef: ca-pair-sslcerts
+      externalAccess:
+       type: loadBalancer
+       loadBalancer:
+         domain: local.kafka.sainsburys-poc
+         port: 8090
+         sessionAffinity: ClientIP
       #authentication:
       #  type: basic
       #  basic:
@@ -210,6 +215,14 @@ spec:
 
       # Configure Embedded REST Proxy
       #- kafka.rest.enable=true
+      #- confluent.http.server.listeners=https://0.0.0.0:8090
+      #- kafka.rest.advertised.listeners=https://kafka.local.kafka.sainsburys-poc:8090
+      #- confluent.http.server.ssl.endpoint.identification.algorithm=https
+      #- confluent.http.server.ssl.protocol=TLSv1.2
+      #- kafka.rest.confluent.resource.name.authority=local.kafka.sainsburys-poc
+      #- confluent.http.server.ssl.keystore.location=/mnt/sslcerts/keystore.jks
+      #- confluent.http.server.ssl.key.password=${file:/mnt/sslcerts/jksPassword.txt:jksPassword}
+      #- confluent.http.server.ssl.keystore.password=${file:/mnt/sslcerts/jksPassword.txt:jksPassword}
       #- kafka.rest.authentication.method=BASIC
       #- kafka.rest.authentication.realm=KafkaRest
       #- kafka.rest.authentication.roles=Administrators
@@ -217,7 +230,6 @@ spec:
       #- kafka.rest.confluent.rest.auth.propagate.method=JETTY_AUTH
       #- kafka.rest.bootstrap.servers=REPLICATION://localhost:9072
       #- kafka.rest.client.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${file:/mnt/secrets/kafka-controller-listener-apikeys/plain.txt:username}" password="${file:/mnt/secrets/kafka-controller-listener-apikeys/plain.txt:password}" config_path="/mnt/secrets/kafka-controller-listener-apikeys/apikeys.json" refresh_ms="3000";
-      #- confluent.http.server.listeners=http://0.0.0.0:8090
       #- kafka.rest.bootstrap.servers=INTERNAL://localhost:9071
 
     log4j:
@@ -227,15 +239,20 @@ spec:
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaRestClass
 metadata:
-  name: kafka-rest
+  name: rest-v3
   namespace: sainsburys-poc
 spec:
   kafkaClusterRef:
     name: kafka
     namespace: sainsburys-poc
   kafkaRest:
-    endpoint: http://kafka.sainsburys-poc.svc.cluster.local:8090
     kafkaClusterID: SainsburysCPEdgePoC001
+    endpoint: https://kafka.sainsburys-poc.svc.cluster.local:8090
+    tls:
+      directoryPathInContainer: /mnt/sslcerts/
+      secretRef: ca-pair-sslcerts
+      jksPassword:
+        secretRef: ca-pair-sslcerts
     authentication:
       type: basic
       basic:

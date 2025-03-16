@@ -19,7 +19,7 @@ while IFS= read -r line; do
   # Determine the hostname
   if [[ "$SERVICE_NAME" == "kafka-bootstrap-lb" ]]; then
     HOSTNAME="$DOMAIN"
-  elif [[ "$SERVICE_NAME" == "kafka-rest-lb" ]]; then
+  elif [[ "$SERVICE_NAME" == "kafka-kafka-rest-bootstrap-lb" ]]; then
     HOSTNAME="kafka.$DOMAIN"
   else
     BROKER_ID=$(echo "$SERVICE_NAME" | sed -E 's/kafka-([0-9]+)-lb/\1/')

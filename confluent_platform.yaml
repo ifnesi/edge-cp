@@ -135,7 +135,7 @@ spec:
 apiVersion: platform.confluent.io/v1beta1
 kind: KafkaRestClass
 metadata:
-  name: kafka-rest
+  name: rest-v3
   namespace: sainsburys-poc
 spec:
   kafkaClusterRef:
