@@ -181,9 +181,6 @@ curl -v -k "https://$REST_DOMAIN:8090/kafka/v3/clusters" -u kafka:kafka-secret -
 
 Response (example):
 ```bash
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100  1262    0  1262    0     0  18222      0 --:--:-- --:--:-- --:--:-- 18289
 {
   "kind": "KafkaClusterList",
   "metadata": {
@@ -226,23 +223,28 @@ Response (example):
 
 #### 2.6.3 Topics
 
-These CRDs can be used as a template for topics creation.
-
-```bash
-kubectl apply -f topic-demo.yaml -n $NAMESPACE
-kubectl apply -f topic-catalina.yaml -n $NAMESPACE
-```
-
 The kafka CLI will only work with Java 17. If you have v21 installed, try setting it to v17 temporarely:
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 ```
 
-List topics:
+List topics (Kafka CLI):
 ```bash
 kafka-topics --list \
   --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties
+```
+
+List topics via the [REST Admin v3 interface](https://docs.confluent.io/platform/current/kafka-rest/api.html#crest-api-v3):
+```bash
+curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics" -u kafka:kafka-secret -H "Accept: application/json" | jq .
+```
+
+These CRDs can be used as a template for topics creation.
+
+```bash
+kubectl apply -f topic-demo.yaml -n $NAMESPACE
+kubectl apply -f topic-catalina.yaml -n $NAMESPACE
 ```
 
 Alternativelly, to create a topic using `kafka-topics(.sh)`, try:
@@ -260,6 +262,42 @@ kafka-topics --create \
   --command-config ./sslcli.properties \
   --partitions 1 \
   --replication-factor 1
+```
+
+The REST Admin v3 interface can also be used to create topics, for example:
+```bash
+curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics" \
+  -u kafka:kafka-secret \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"topic_name": "catalina-test-101", "partitions_count": 1, "replication_factor": 1, "configs": [{"name": "cleanup.policy", "value": "delete"}, {"name": "compression.type", "value": "gzip"}]}' \
+  | jq .
+```
+
+Response (example):
+```bash
+{
+  "kind": "KafkaTopic",
+  "metadata": {
+    "self": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101",
+    "resource_name": "crn:///kafka=SainsburysCPEdgePoC001/topic=catalina-test-101"
+  },
+  "cluster_id": "SainsburysCPEdgePoC001",
+  "topic_name": "catalina-test-101",
+  "is_internal": false,
+  "replication_factor": 1,
+  "partitions_count": 1,
+  "partitions": {
+    "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101/partitions"
+  },
+  "configs": {
+    "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101/configs"
+  },
+  "partition_reassignments": {
+    "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101/partitions/-/reassignment"
+  },
+  "authorized_operations": []
+}
 ```
 
 Execute Performance Tests:
