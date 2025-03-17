@@ -20,9 +20,9 @@ spec:
         cpu: 500m
         memory: 1024Mi
 
+  # If CfK was installed with '--set licenseKey=<CFK license key>':
   #license:
     #globalLicense: true
-    #secretRef: 
 
   authorization:
     type: simple
@@ -82,6 +82,10 @@ spec:
     type: simple
     superUsers:
       - User:kafka
+
+  # If CfK was installed with '--set licenseKey=<CFK license key>':
+  #license:
+    #globalLicense: true
 
   metricReporter:
     enabled: false

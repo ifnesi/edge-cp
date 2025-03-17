@@ -45,6 +45,10 @@ kubectl config set-context --current --namespace=$NAMESPACE
 
 ### 2.3 Install Confluent Operator
 
+To set the [Confluent Platform license](https://docs.confluent.io/operator/current/co-license.html) at a global level use `--set licenseKey=<CFK license key>` when installing the `confluent-operator`. Also, make sute to set `spec.license.globalLicense: true` in the component custom resources (CR). That will create the confluent-operator-licensing secret with the following files:
+ - `license.txt` contains the <CFK_license_key> you specified
+ - `publicKey.pem` contains the public key used to validate the signed license
+
 ```bash
 helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes \
   --namespace $NAMESPACE \
