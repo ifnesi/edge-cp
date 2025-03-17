@@ -313,14 +313,19 @@ kafka-producer-perf-test \
 
 #### 2.6.4 ACLs
 
-List ACLs:
+List ACLs (Kafka CLI):
 ```bash
 kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
   --list
 ```
 
-Add ACLs:
+List ACLs via the [REST Admin v3 interface](https://docs.confluent.io/platform/current/kafka-rest/api.html#crest-api-v3):
+```bash
+curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/acls" -u kafka:kafka-secret -H "Accept: application/json" | jq .
+```
+
+Add ACLs (Kafka CLI):
 ```bash
 kafka-acls --bootstrap-server $BOOTSTRAP \
   --command-config ./sslcli.properties \
@@ -344,6 +349,16 @@ kafka-acls --bootstrap-server $BOOTSTRAP \
   --allow-principal User:catalina-001 \
   --operation All \
   --group catalina-consumer-group
+```
+
+The REST Admin v3 interface can also be used to create ACLs, for example:
+```bash
+curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/acls:batch" \
+  -u kafka:kafka-secret \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"data": [{"resource_type": "TOPIC", "resource_name": "demo-topic", "pattern_type": "LITERAL", "principal": "User:catalina-001", "host": "*", "operation": "ALL", "permission": "ALLOW"}]}' \
+  | jq .
 ```
 
 Consumer Test (Python):
