@@ -165,7 +165,7 @@ kraftcontroller-1-internal      ClusterIP      10.0.9.181     <none>           9
 kraftcontroller-2-internal      ClusterIP      10.0.32.9      <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
 ```
 
-Alternatively, run the script `etc_hosts.sh` to printout the entries required for `/etc/hosts`. See below example for a three brokers cluster:
+Alternatively, run the script `./etc_hosts.sh` to printout the entries required for `/etc/hosts`. See below example for a three brokers cluster:
 ```bash
 # Entries for /etc/hosts:
 51.137.132.62 b0.local.kafka.sainsburys-poc
