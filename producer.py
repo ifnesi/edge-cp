@@ -1,6 +1,7 @@
 import json
 import uuid
 import socket
+import time
 
 from faker import Faker
 from confluent_kafka import Producer
@@ -18,6 +19,7 @@ producer = Producer(
         "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/ca.pem",
         "ssl.endpoint.identification.algorithm": "none",
         "client.id": socket.gethostname(),
+        # "debug": "all",
     }
 )
 
@@ -47,7 +49,11 @@ try:
             callback=acked,
         )
         producer.poll(0)
+        time.sleep(1)
 except KeyboardInterrupt:
     print("Producer interrupted. Exiting...")
+except Exception as err:
+    print(f"ERROR: {err}")
 finally:
+    print("Flushing producer")
     producer.flush()
