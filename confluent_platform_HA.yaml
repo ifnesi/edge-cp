@@ -193,7 +193,7 @@ spec:
     namespace: sainsburys-poc
   kafkaRest:
     kafkaClusterID: SainsburysCPEdgePoC001
-    endpoint: https://kafka.confluent.svc.cluster.local:8090
+    endpoint: https://kafka.sainsburys-poc.svc.cluster.local:8090
     tls:
       directoryPathInContainer: /mnt/sslcerts/
       secretRef: ca-pair-sslcerts
