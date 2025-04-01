@@ -204,7 +204,6 @@ spec:
       - allow.everyone.if.no.acl.found=false
 
       # Protocol mapping
-      #- listener.security.protocol.map=CONTROLLER:SASL_PLAINTEXT,INTERNAL:SASL_PLAINTEXT,REPLICATION:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
       - listener.security.protocol.map=CONTROLLER:SASL_PLAINTEXT,INTERNAL:SASL_PLAINTEXT,REPLICATION:SASL_PLAINTEXT,EXTERNAL:SASL_SSL
       - listeners=EXTERNAL://:9092,REPLICATION://:9072,INTERNAL://:9071
       - advertised.listeners=EXTERNAL://local.kafka.sainsburys-poc:9092,INTERNAL://kafka-0.kafka.sainsburys-poc.svc.cluster.local:9071,REPLICATION://kafka-0.kafka.sainsburys-poc.svc.cluster.local:9072
