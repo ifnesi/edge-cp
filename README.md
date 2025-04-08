@@ -324,7 +324,7 @@ kafka-producer-perf-test \
    --record-size 10000 \
    --throughput -1 \
    --producer.config ./sslcli.properties \
-   --producer-props bootstrap.servers=$BOOTSTRAP batch.size=100 compression.type=lz4
+   --producer-props bootstrap.servers=$BOOTSTRAP batch.size=100 compression.type=lz4 acks=all
 ```
 
 #### 2.6.4 ACLs

@@ -19,6 +19,7 @@ producer = Producer(
         "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/cacerts.pem",
         "ssl.endpoint.identification.algorithm": "none",
         "client.id": socket.gethostname(),
+        "acks": "all",
         # "debug": "all",
     }
 )
@@ -49,7 +50,7 @@ try:
             callback=acked,
         )
         producer.poll(0)
-        time.sleep(1)
+        #time.sleep(0.1)
 except KeyboardInterrupt:
     print("Producer interrupted. Exiting...")
 except Exception as err:
