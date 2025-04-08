@@ -50,7 +50,7 @@ try:
             callback=acked,
         )
         producer.poll(0)
-        #time.sleep(0.1)
+        time.sleep(0.5)
 except KeyboardInterrupt:
     print("Producer interrupted. Exiting...")
 except Exception as err:
