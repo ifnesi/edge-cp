@@ -70,33 +70,43 @@ confluent-operator-9876f6577-gwms5   1/1     Running   0          5s
 
 ### 2.4 Create SSL Self-Signed Certificate (Main Domain + wildcard for the SANs)
 
+Make sure to have `openssl`, `cfssl` and `cfssljson` installed.
+
 ```bash
 rm -rf $CERTS_FOLDER 2> /dev/null
 mkdir $CERTS_FOLDER
 
 echo "jksPassword="$JKS_PASSWORD | tr -d '\n' > $CERTS_FOLDER/jksPassword.txt
 
-openssl genrsa -out $CERTS_FOLDER/ca-key.pem 2048
-openssl req -new -x509 \
+openssl genrsa -out $CERTS_FOLDER/rootCAkey.pem 2048
+openssl req -x509  -new -nodes \
+  -key $CERTS_FOLDER/rootCAkey.pem \
   -days 3650 \
-  -key $CERTS_FOLDER/ca-key.pem \
-  -out $CERTS_FOLDER/ca.pem \
-  -batch \
-  -config openssl.cnf \
-  -extensions v3_req
-
-kubectl delete secret ca-pair-sslcerts -n $NAMESPACE 2> /dev/null
-kubectl create secret tls ca-pair-sslcerts \
-   --cert=$CERTS_FOLDER/ca.pem \
-   --key=$CERTS_FOLDER/ca-key.pem \
-   -n $NAMESPACE
-kubectl patch secret ca-pair-sslcerts \
-  --type=merge \
-  -p "{\"data\":{\"jksPassword.txt\":\"$(base64 -i $CERTS_FOLDER/jksPassword.txt | tr -d '\n')\"}}" \
-  -n $NAMESPACE
+  -out $CERTS_FOLDER/cacerts.pem \
+  -subj "/C=US/ST=CA/L=MVT/O=TestOrg/OU=Cloud/CN=TestCA"
+openssl x509 -in $CERTS_FOLDER/cacerts.pem -text -noout
 
 keytool -delete -alias $NAMESPACE -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD 2> /dev/null
-keytool -importcert -trustcacerts -alias $NAMESPACE -file $CERTS_FOLDER/ca.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
+keytool -importcert -trustcacerts -alias $NAMESPACE -file $CERTS_FOLDER/cacerts.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
+
+cfssl gencert -ca=$CERTS_FOLDER/cacerts.pem \
+  -ca-key=$CERTS_FOLDER/rootCAkey.pem \
+  -config=ca-config.json \
+  -profile=server kafka-server-domain.json | cfssljson -bare $CERTS_FOLDER/kafka-server
+
+kubectl delete secret tls-kafka -n $NAMESPACE 2> /dev/null
+kubectl create secret generic tls-kafka \
+  --from-file=fullchain.pem=$CERTS_FOLDER/kafka-server.pem \
+  --from-file=cacerts.pem=$CERTS_FOLDER/cacerts.pem \
+  --from-file=privkey.pem=$CERTS_FOLDER/kafka-server-key.pem \
+  --namespace $NAMESPACE
+
+kubectl delete secret ca-pair-sslcerts -n $NAMESPACE 2> /dev/null
+kubectl create secret generic ca-pair-sslcerts \
+  --from-file=ca.crt=./sslcerts/cacerts.pem \
+  --from-file=ca.key=./sslcerts/rootCAkey.pem \
+  -n $NAMESPACE 
+
 keytool -list -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD
 ```
 

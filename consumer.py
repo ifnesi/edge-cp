@@ -11,7 +11,7 @@ consumer = Consumer(
         "sasl.mechanism": "PLAIN",
         "sasl.username": "catalina-001",
         "sasl.password": "catalina-001-secret",
-        "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/ca.pem",
+        "ssl.ca.location": "/Users/inesi/Documents/_CFLT/Dev/Docker/edge-cp/sslcerts/cacerts.pem",
         "ssl.endpoint.identification.algorithm": "none",
         "client.id": socket.gethostname(),
         "group.id": "catalina-consumer-group",

@@ -1,0 +1,23 @@
+{
+    "CN": "kafka",
+    "hosts": [
+        "kafka",
+        "local.kafka.sainsburys-poc",
+        "*.local.kafka.sainsburys-poc",
+        "kafka.sainsburys-poc.svc.cluster.local",
+        "*.kafka.sainsburys-poc.svc.cluster.local",
+        "kraftcontroller.sainsburys-poc.svc.cluster.local",
+        "*.kraftcontroller.sainsburys-poc.svc.cluster.local"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "Universe",
+            "ST": "Pangea",
+            "L": "Earth"
+        }
+    ]
+}
