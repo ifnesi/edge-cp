@@ -396,7 +396,8 @@ kafka-acls --bootstrap-server $BOOTSTRAP \
   --group '*' \
   --force
 ```
-## 4. Observability with Prometheus-Grafana Stack
+
+## 3. Observability with Prometheus-Grafana Stack
 Deploy Prometheus and Grafana using Helm charts or Kubernetes manifests. You can use the following commands to install them via Helm:
 ```bash
 helm install prometheus prometheus-community/kube-prometheus-stack
@@ -413,7 +414,8 @@ spec:
       KAFKA_JMX_EXPORTER_ENABLED: "true"
       KAFKA_JMX_EXPORTER_PORT: "<PORT NUMBER>"
 ```
-For docker based deployments here is an [example](./cp-observability/docker-compose.yml#L57C6-L57C16). </br>
+
+For docker based deployments here is an [example](./cp-observability/docker-compose.yml#L57C6-L57C16).</br>
 Configure Prometheus to scrape Kafka metrics. This typically involves adding a scrape configuration in the Prometheus config to scrape the JMX exporter endpoint exposed by Kafka pods.
 
 In the Prometheus configuration (prometheus.yaml), add the following scrape job:
@@ -423,8 +425,10 @@ scrape_configs:
     static_configs:
       - targets: ['<kafka-pod-ip>:<PORT NUMBER AS IN THE PREV STEP>']
 ```
+
 After Prometheus starts scraping metrics from Kafka, you can create Grafana dashboards to visualize those metrics.
 You can either create your custom dashboards or use pre-built Kafka dashboards from the [jmx-monitoring-stack repository](https://github.com/confluentinc/jmx-monitoring-stacks/tree/main/jmxexporter-prometheus-grafana/assets/grafana/provisioning).
+
 ## 4. Tearing it down
 ```bash
 kubectl delete -f topic-catalina.yaml -n $NAMESPACE
