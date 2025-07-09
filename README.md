@@ -1,4 +1,4 @@
-# Edge Confluent Platform - PoC for Sainsburys/UK
+# Edge Confluent Platform - PoC
 
 ## 1. Requirements and Assumptions
 - Embedded REST (v3). No REST Proxy (producers/consumers to use the Kafka protocol)
@@ -27,7 +27,7 @@ This deployment utilises [kubectl](https://kubernetes.io/docs/tasks/tools/#kubec
 ### 2.1 Define Env Vars
 
 ```bash
-export NAMESPACE="sainsburys-poc"
+export NAMESPACE="cp-poc"
 export DOMAIN="local.kafka."$NAMESPACE
 export REST_DOMAIN="kafka."$DOMAIN
 export BOOTSTRAP=$DOMAIN":9092"
@@ -178,11 +178,11 @@ kraftcontroller-2-internal      ClusterIP      10.0.32.9      <none>           9
 Alternatively, run the script `./etc_hosts.sh` to printout the entries required for `/etc/hosts`. See below example for a three brokers cluster:
 ```bash
 # Entries for /etc/hosts:
-51.137.132.62 b0.local.kafka.sainsburys-poc
-51.137.132.75 b1.local.kafka.sainsburys-poc
-51.137.132.245 b2.local.kafka.sainsburys-poc
-51.137.157.215 local.kafka.sainsburys-poc
-51.137.155.27 kafka.local.kafka.sainsburys-poc
+51.137.132.62 b0.local.kafka.cp-poc
+51.137.132.75 b1.local.kafka.cp-poc
+51.137.132.245 b2.local.kafka.cp-poc
+51.137.157.215 local.kafka.cp-poc
+51.137.155.27 kafka.local.kafka.cp-poc
 ```
 
 Make sure the CP Kafka cluster (Loadbalancer) has a SSL certificate attached to it:
@@ -200,37 +200,37 @@ Response (example):
 {
   "kind": "KafkaClusterList",
   "metadata": {
-    "self": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters",
+    "self": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters",
     "next": null
   },
   "data": [
     {
       "kind": "KafkaCluster",
       "metadata": {
-        "self": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001",
-        "resource_name": "crn:///kafka=SainsburysCPEdgePoC001"
+        "self": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01",
+        "resource_name": "crn:///kafka=ConfluentPlatformPoC01"
       },
-      "cluster_id": "SainsburysCPEdgePoC001",
+      "cluster_id": "ConfluentPlatformPoC01",
       "controller": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/brokers/0"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/brokers/0"
       },
       "acls": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/acls"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/acls"
       },
       "brokers": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/brokers"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/brokers"
       },
       "broker_configs": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/broker-configs"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/broker-configs"
       },
       "consumer_groups": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/consumer-groups"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/consumer-groups"
       },
       "topics": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics"
       },
       "partition_reassignments": {
-        "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/-/partitions/-/reassignment"
+        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/-/partitions/-/reassignment"
       }
     }
   ]
@@ -253,7 +253,7 @@ kafka-topics --list \
 
 List topics via the [REST Admin v3 interface](https://docs.confluent.io/platform/current/kafka-rest/api.html#crest-api-v3):
 ```bash
-curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics" -u kafka:kafka-secret -H "Accept: application/json" | jq .
+curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics" -u kafka:kafka-secret -H "Accept: application/json" | jq .
 ```
 
 These CRDs can be used as a template for topics creation.
@@ -282,7 +282,7 @@ kafka-topics --create \
 
 The REST Admin v3 interface can also be used to create topics, for example:
 ```bash
-curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics" \
+curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics" \
   -u kafka:kafka-secret \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
@@ -295,22 +295,22 @@ Response (example):
 {
   "kind": "KafkaTopic",
   "metadata": {
-    "self": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101",
-    "resource_name": "crn:///kafka=SainsburysCPEdgePoC001/topic=catalina-test-101"
+    "self": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101",
+    "resource_name": "crn:///kafka=ConfluentPlatformPoC01/topic=catalina-test-101"
   },
-  "cluster_id": "SainsburysCPEdgePoC001",
+  "cluster_id": "ConfluentPlatformPoC01",
   "topic_name": "catalina-test-101",
   "is_internal": false,
   "replication_factor": 1,
   "partitions_count": 1,
   "partitions": {
-    "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101/partitions"
+    "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101/partitions"
   },
   "configs": {
-    "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101/configs"
+    "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101/configs"
   },
   "partition_reassignments": {
-    "related": "https://kafka.local.kafka.sainsburys-poc:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/topics/catalina-test-101/partitions/-/reassignment"
+    "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101/partitions/-/reassignment"
   },
   "authorized_operations": []
 }
@@ -338,7 +338,7 @@ kafka-acls --bootstrap-server $BOOTSTRAP \
 
 List ACLs via the [REST Admin v3 interface](https://docs.confluent.io/platform/current/kafka-rest/api.html#crest-api-v3):
 ```bash
-curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/acls" -u kafka:kafka-secret -H "Accept: application/json" | jq .
+curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/acls" -u kafka:kafka-secret -H "Accept: application/json" | jq .
 ```
 
 Add ACLs (Kafka CLI):
@@ -369,7 +369,7 @@ kafka-acls --bootstrap-server $BOOTSTRAP \
 
 The REST Admin v3 interface can also be used to create ACLs, for example:
 ```bash
-curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/SainsburysCPEdgePoC001/acls:batch" \
+curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/acls:batch" \
   -u kafka:kafka-secret \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \

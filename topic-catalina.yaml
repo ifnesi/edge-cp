@@ -2,11 +2,11 @@ apiVersion: platform.confluent.io/v1beta1
 kind: KafkaTopic
 metadata:
   name: catalina-test
-  namespace: sainsburys-poc
+  namespace: cp-poc
 spec:
   kafkaClusterRef:
     name: kafka
-    namespace: sainsburys-poc
+    namespace: cp-poc
   replicas: 1
   partitionCount: 1
   configs:

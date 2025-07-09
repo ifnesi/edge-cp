@@ -11,7 +11,7 @@ from confluent_kafka.serialization import StringSerializer, StringDeserializer
 # Producer instance
 producer = Producer(
     {
-        "bootstrap.servers": "local.kafka.sainsburys-poc:9092",
+        "bootstrap.servers": "local.kafka.cp-poc:9092",
         "security.protocol": "SASL_SSL",
         "sasl.mechanism": "PLAIN",
         "sasl.username": "catalina-001",

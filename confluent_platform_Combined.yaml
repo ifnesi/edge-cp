@@ -4,7 +4,7 @@ apiVersion: platform.confluent.io/v1beta1
 kind: KRaftController
 metadata:
   name: kafka
-  namespace: sainsburys-poc
+  namespace: cp-poc
 spec:
   dataVolumeCapacity: 10G
   image:
@@ -74,7 +74,7 @@ spec:
       # Protocol mapping
       - listener.security.protocol.map=CONTROLLER:SASL_PLAINTEXT,REPLICATION:SASL_PLAINTEXT,EXTERNAL:SASL_SSL      
       - listeners=EXTERNAL://:9092,REPLICATION://:9072,CONTROLLER://:9074
-      - advertised.listeners=EXTERNAL://local.kafka.sainsburys-poc:9092,REPLICATION://localhost:9072
+      - advertised.listeners=EXTERNAL://local.kafka.cp-poc:9092,REPLICATION://localhost:9072
 
       # Configure Embedded REST Proxy
       - kafka.rest.enable=true
@@ -86,7 +86,7 @@ spec:
       - kafka.rest.bootstrap.servers=REPLICATION://localhost:9072
       - kafka.rest.client.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${file:/mnt/secrets/kafka-controller-listener-apikeys/plain.txt:username}" password="${file:/mnt/secrets/kafka-controller-listener-apikeys/plain.txt:password}";
       - confluent.http.server.listeners=http://0.0.0.0:8090
-      #- kafka.rest.advertised.listeners=http://local.kafka.sainsburys-poc:8080
+      #- kafka.rest.advertised.listeners=http://local.kafka.cp-poc:8080
       #- kafka.rest.kafka.rest.resource.extension.class=io.confluent.kafkarest.security.KafkaRestSecurityResourceExtension
       #- kafka.rest.client.ssl.key.password=${file:/mnt/sslcerts/jksPassword.txt:jksPassword}
       #- kafka.rest.client.ssl.keystore.location=/mnt/sslcerts/keystore.jks
@@ -136,13 +136,13 @@ apiVersion: platform.confluent.io/v1beta1
 kind: KafkaRestClass
 metadata:
   name: rest-v3
-  namespace: sainsburys-poc
+  namespace: cp-poc
 spec:
   kafkaClusterRef:
     name: kafka
-    namespace: sainsburys-poc
+    namespace: cp-poc
   kafkaRest:
-    endpoint: http://kafka.sainsburys-poc.svc.cluster.local:8090
+    endpoint: http://kafka.cp-poc.svc.cluster.local:8090
     #authentication:
     #  type: basic
     #  basic:
@@ -153,7 +153,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: kafka-service
-  namespace: sainsburys-poc
+  namespace: cp-poc
 spec:
   selector:
     app: kafka

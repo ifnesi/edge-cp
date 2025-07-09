@@ -6,7 +6,7 @@ from confluent_kafka.serialization import StringDeserializer
 # Consumer instance
 consumer = Consumer(
     {
-        "bootstrap.servers": "local.kafka.sainsburys-poc:9092",
+        "bootstrap.servers": "local.kafka.cp-poc:9092",
         "security.protocol": "SASL_SSL",
         "sasl.mechanism": "PLAIN",
         "sasl.username": "catalina-001",

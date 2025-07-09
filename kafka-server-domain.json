@@ -2,12 +2,12 @@
     "CN": "kafka",
     "hosts": [
         "kafka",
-        "local.kafka.sainsburys-poc",
-        "*.local.kafka.sainsburys-poc",
-        "kafka.sainsburys-poc.svc.cluster.local",
-        "*.kafka.sainsburys-poc.svc.cluster.local",
-        "kraftcontroller.sainsburys-poc.svc.cluster.local",
-        "*.kraftcontroller.sainsburys-poc.svc.cluster.local"
+        "local.kafka.cp-poc",
+        "*.local.kafka.cp-poc",
+        "kafka.cp-poc.svc.cluster.local",
+        "*.kafka.cp-poc.svc.cluster.local",
+        "kraftcontroller.cp-poc.svc.cluster.local",
+        "*.kraftcontroller.cp-poc.svc.cluster.local"
     ],
     "key": {
         "algo": "rsa",

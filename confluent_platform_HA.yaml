@@ -6,10 +6,10 @@ apiVersion: platform.confluent.io/v1beta1
 kind: KRaftController
 metadata:
   name: kraftcontroller
-  namespace: sainsburys-poc
+  namespace: cp-poc
 
 spec:
-  clusterID: SainsburysCPEdgePoC001
+  clusterID: ConfluentPlatformPoC01
   replicas: 3
   oneReplicaPerNode: true
   dataVolumeCapacity: 10G
@@ -61,7 +61,7 @@ apiVersion: platform.confluent.io/v1beta1
 kind: Kafka
 metadata:
   name: kafka
-  namespace: sainsburys-poc
+  namespace: cp-poc
 
 spec:
   replicas: 3
@@ -109,7 +109,7 @@ spec:
       externalAccess:
        type: loadBalancer
        loadBalancer:
-         domain: local.kafka.sainsburys-poc
+         domain: local.kafka.cp-poc
          port: 8090
          sessionAffinity: ClientIP
 
@@ -138,7 +138,7 @@ spec:
       externalAccess:
         type: loadBalancer
         loadBalancer:
-          domain: local.kafka.sainsburys-poc
+          domain: local.kafka.cp-poc
           brokerPrefix: b
           #bootstrapPrefix: kafka
 
@@ -167,14 +167,14 @@ apiVersion: platform.confluent.io/v1beta1
 kind: KafkaRestClass
 metadata:
   name: rest-v3
-  namespace: sainsburys-poc
+  namespace: cp-poc
 spec:
   kafkaClusterRef:
     name: kafka
-    namespace: sainsburys-poc
+    namespace: cp-poc
   kafkaRest:
-    kafkaClusterID: SainsburysCPEdgePoC001
-    endpoint: https://kafka.sainsburys-poc.svc.cluster.local:8090
+    kafkaClusterID: ConfluentPlatformPoC01
+    endpoint: https://kafka.cp-poc.svc.cluster.local:8090
     tls:
       directoryPathInContainer: /mnt/sslcerts/
       secretRef: ca-pair-sslcerts
