@@ -1,0 +1,33 @@
+# Slim on AKS: external access through Azure LoadBalancers (same hostnames/ports as colima)
+#   kafka.cp-edge-slim.test:31000  sr.cp-edge-slim.test:31081  c3.cp-edge-slim.test:31021
+# Deploy with: scripts/deploy.sh slim aks
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+patches:
+  - target: {kind: Service, name: kafka-external}
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+  - target: {kind: SchemaRegistry, name: schemaregistry}
+    patch: |-
+      - op: add
+        path: /spec/externalAccess
+        value:
+          type: loadBalancer
+          loadBalancer:
+            domain: cp-edge-slim.test
+            prefix: sr
+            port: 31081
+  - target: {kind: ControlCenter, name: controlcenter}
+    patch: |-
+      - op: add
+        path: /spec/externalAccess
+        value:
+          type: loadBalancer
+          loadBalancer:
+            domain: cp-edge-slim.test
+            prefix: c3
+            port: 31021

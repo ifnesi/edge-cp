@@ -1,0 +1,39 @@
+apiVersion: platform.confluent.io/v1beta1
+kind: SchemaRegistry
+metadata:
+  name: schemaregistry
+spec:
+  replicas: 1
+  # Single broker: internal topics with replication factor 1
+  internalTopicReplicatorFactor: 1
+  image:
+    application: confluentinc/cp-schema-registry:8.4.1
+    init: confluentinc/confluent-init-container:3.4.1
+  podTemplate:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 768Mi
+  # license:
+  #   globalLicense: true
+  # HTTPS on 8081
+  tls:
+    secretRef: tls-cp
+  # Basic auth "API keys" (user: secret,role) from secret sr-users
+  authentication:
+    type: basic
+    basic:
+      secretRef: sr-users
+      roles:
+        - admin
+        - developer
+  # External access is added by the colima / aks overlay
+  dependencies:
+    kafka:
+      bootstrapEndpoint: kafka.cp-edge-slim.svc.cluster.local:9071
+      tls:
+        enabled: true
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: kafka-credential

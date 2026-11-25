@@ -1,6 +1,27 @@
-sslcerts/
+# Generated TLS material (scripts/certs.sh) - never commit private keys
+certs/
+*.pem
+*.key
+*.p12
+*.jks
+*.srl
 
-.DS_Store
-cp-poc
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
 
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+
+# Local notes / OS / editors
 notes.txt
+.DS_Store
+.idea/
+.vscode/
+*.swp

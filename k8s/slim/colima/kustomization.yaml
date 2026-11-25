@@ -1,0 +1,34 @@
+# Slim on Colima/k3s (single node): external access through NodePorts on the node IP
+#   kafka.cp-edge-slim.test:31000  sr.cp-edge-slim.test:31081  c3.cp-edge-slim.test:31021
+# Deploy with: scripts/deploy.sh slim colima
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+patches:
+  - target: {kind: Service, name: kafka-external}
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 31000
+  - target: {kind: SchemaRegistry, name: schemaregistry}
+    patch: |-
+      - op: add
+        path: /spec/externalAccess
+        value:
+          type: nodePort
+          nodePort:
+            host: sr.cp-edge-slim.test
+            nodePortOffset: 31081
+  - target: {kind: ControlCenter, name: controlcenter}
+    patch: |-
+      - op: add
+        path: /spec/externalAccess
+        value:
+          type: nodePort
+          nodePort:
+            host: c3.cp-edge-slim.test
+            nodePortOffset: 31021

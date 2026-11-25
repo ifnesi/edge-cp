@@ -1,0 +1,97 @@
+apiVersion: platform.confluent.io/v1beta1
+kind: Kafka
+metadata:
+  name: kafka
+spec:
+  replicas: 3
+  # One pod per node (needs >= 3 nodes in the AKS node pool)
+  oneReplicaPerNode: true
+  dataVolumeCapacity: 20Gi
+  image:
+    application: confluentinc/cp-server:8.4.1
+    init: confluentinc/confluent-init-container:3.4.1
+  podTemplate:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+  # license:
+  #   globalLicense: true
+  tls:
+    secretRef: tls-cp
+
+  listeners:
+    # In-cluster clients (Schema Registry, Control Center): SASL_SSL on 9071
+    internal:
+      tls:
+        enabled: true
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: kafka-credential
+    # Broker-to-broker: SASL_SSL on 9072
+    replication:
+      tls:
+        enabled: true
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: kafka-credential
+    # External clients: SASL_SSL via Azure LoadBalancers
+    #   bootstrap kafka.cp-edge-ha.test:9092, brokers b0|b1|b2.cp-edge-ha.test:9092
+    external:
+      tls:
+        enabled: true
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: kafka-credential
+      externalAccess:
+        type: loadBalancer
+        loadBalancer:
+          domain: cp-edge-ha.test
+          bootstrapPrefix: kafka
+          brokerPrefix: b
+
+  # Embedded Kafka REST / Admin API v3 (HTTPS + basic auth): https://rest.cp-edge-ha.test:8090
+  services:
+    kafkaRest:
+      tls:
+        enabled: true
+      authentication:
+        type: basic
+        basic:
+          secretRef: rest-users
+          roles:
+            - Administrators
+      externalAccess:
+        type: loadBalancer
+        loadBalancer:
+          domain: cp-edge-ha.test
+          prefix: rest
+          port: 8090
+
+  authorization:
+    type: simple
+    superUsers:
+      - User:kafka
+
+  configOverrides:
+    server:
+      - allow.everyone.if.no.acl.found=false
+      - default.replication.factor=3
+      - min.insync.replicas=2
+
+  dependencies:
+    kRaftController:
+      clusterRef:
+        name: kraftcontroller
+      controllerListener:
+        tls:
+          enabled: true
+        authentication:
+          type: plain
+          jaasConfig:
+            secretRef: kafka-credential
+    metricsClient:
+      url: http://controlcenter.cp-edge-ha.svc.cluster.local:9090

@@ -1,0 +1,16 @@
+# External access to the combined node's EXTERNAL listener (advertised as kafka.cp-edge-slim.test:31000).
+# The overlays set the type: NodePort 31000 (colima) or LoadBalancer port 31000 (aks).
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-external
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka
+    platform.confluent.io/type: kraftcontroller
+  ports:
+    - name: external
+      protocol: TCP
+      port: 31000
+      targetPort: 9092

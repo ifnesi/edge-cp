@@ -1,0 +1,10 @@
+# Slim variant (base): 1x combined broker+KRaft, 1x Schema Registry, 1x Control Center (+ Prometheus/Alertmanager)
+# External access is added by the overlays: ../colima (NodePort) or ../aks (LoadBalancer)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cp-edge-slim
+resources:
+  - kafka.yaml
+  - kafka-external-svc.yaml
+  - schemaregistry.yaml
+  - controlcenter.yaml

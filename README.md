@@ -1,444 +1,524 @@
 # Edge Confluent Platform - PoC
 
-## 1. Requirements and Assumptions
-- Embedded REST (v3). No REST Proxy (producers/consumers to use the Kafka protocol)
-- No C3, ksqlDB, and Schema Registry
-- High-Available Kafka Cluster 3x Kraft + 3x Confluent Servers on v7.9.0 (or latest)
-  - 8 vCPU
-  - 16 GB RAM
-  - 5 TB disk (persistent storage, depending on a suitable Storage class)
-  - One single cluster, no DR
-- Single namespace containing the CfK Operator and the CP pod
-- Separate namespace for monitoring (and potentially other agents Sainsbury’s may want to deploy)
-- Self-signed TLS (auto-generated certs)
-  - SASL_PLAINTEXT inside the pod (for CONTROLLER and REPLICATION listeners)
-  - SASL_SSL outside the pod (for EXTERNAL listener)
-  - SSL for Embedded REST (v3)
-  - No SSL certificate rotation
-- File-based user creds store (SASL_SSL with basic creds for external AuthN)
-- Kafka ACLs, but no Confluent RBACs
-- JMX exporter for Prometheus
-- No need for the Confluent Metrics/Telemetry Reporter
+Confluent Platform **8.4** on Kubernetes, deployed with **Confluent for Kubernetes (CFK) 3.4**, in two flavours:
 
-## 2. Deploying the Edge-CP Platform
+| Variant  | Namespace      | Components                                                                 | Runs on        |
+|----------|----------------|----------------------------------------------------------------------------|----------------|
+| **HA**   | `cp-edge-ha`   | 3x KRaft controllers, 3x brokers, 1x Schema Registry, 1x Control Center (+ Prometheus/Alertmanager) | Azure AKS (3 nodes) |
+| **Slim** | `cp-edge-slim` | 1x combined broker/KRaft, 1x Schema Registry, 1x Control Center (+ Prometheus/Alertmanager)         | Colima (local) or Azure AKS (1 node) |
 
-This deployment utilises [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) to apply the necessary CRD/YAML files for deploying Confluent Platform on Kubernetes. The target environment is **Azure Kubernetes Service (AKS)**. Before proceeding, ensure that kubectl is correctly configured to interact with your AKS cluster. This includes setting up kubectl with the appropriate Azure credentials and context.
+Both variants use TLS on every listener, SASL_SSL (PLAIN) for Kafka, Kafka ACLs, and API keys (HTTPS + basic auth) for Schema Registry. Certificates are self-signed.
 
-### 2.1 Define Env Vars
+## Contents
+
+1. [Scope](#1-scope)
+2. [Prerequisites](#2-prerequisites)
+3. [Running on Colima (slim only)](#3-running-on-colima-slim-only)
+4. [Running on Azure AKS (HA or slim)](#4-running-on-azure-aks-ha-or-slim)
+5. [Using the demo](#5-using-the-demo)
+6. [Credentials](#6-credentials)
+7. [Tearing it down](#7-tearing-it-down)
+8. [Troubleshooting](#8-troubleshooting)
+
+## 1. Scope
+
+### Architecture
+
+Every arrow is TLS plus authentication: SASL_SSL (PLAIN) for Kafka traffic, HTTPS + basic auth for Schema Registry, Control Center and Kafka REST. The CFK operator, deployed in the same namespace, manages every component from its custom resource (CR).
+
+#### HA (`cp-edge-ha`, AKS, 3 nodes)
+
+```mermaid
+flowchart LR
+  subgraph clients["Clients (outside the cluster)"]
+    py["Python producer / consumer<br/>(Avro)"]
+    web["Browser"]
+    rc["REST client"]
+  end
+
+  subgraph aks["AKS - namespace cp-edge-ha"]
+    cfk["CFK operator 3.4.1"]
+
+    subgraph lb["Azure LoadBalancers"]
+      lbk["kafka / b0..b2.cp-edge-ha.test:9092"]
+      lbsr["sr.cp-edge-ha.test:8081"]
+      lbc3["c3.cp-edge-ha.test:9021"]
+      lbrest["rest.cp-edge-ha.test:8090"]
+    end
+
+    subgraph brokers["Kafka CR - 3 brokers (one per node)"]
+      k0["kafka-0"]
+      k1["kafka-1"]
+      k2["kafka-2"]
+    end
+
+    subgraph kraft["KRaftController CR - 3 controllers (one per node)"]
+      c0["kraftcontroller-0"]
+      c1["kraftcontroller-1"]
+      c2["kraftcontroller-2"]
+    end
+
+    sr["Schema Registry<br/>schemaregistry-0"]
+
+    subgraph c3pod["Control Center pod - controlcenter-0"]
+      c3["Control Center 2.7"]
+      prom["Prometheus :9090"]
+      am["Alertmanager :9093"]
+    end
+  end
+
+  py -- "SASL_SSL" --> lbk
+  py -- "HTTPS + API key" --> lbsr
+  web -- "HTTPS + login" --> lbc3
+  rc -- "HTTPS + basic auth" --> lbrest
+
+  lbk -- "EXTERNAL :9092" --> brokers
+  lbrest -- "embedded REST :8090" --> brokers
+  lbsr --> sr
+  lbc3 --> c3
+
+  k0 ---|"REPLICATION :9072"| k1
+  k1 ---|"REPLICATION :9072"| k2
+  brokers -- "CONTROLLER :9074" --> kraft
+  sr -- "INTERNAL :9071" --> brokers
+  c3 -- "INTERNAL :9071" --> brokers
+  c3 -- "HTTPS :8081" --> sr
+  c3 --> prom
+  prom --> am
+  brokers -. "metrics (OTLP)" .-> prom
+  kraft -. "metrics (OTLP)" .-> prom
+
+  cfk -. "manages CRs<br/>(KafkaTopic via REST)" .-> brokers
+  cfk -.-> kraft
+  cfk -.-> sr
+  cfk -.-> c3
+```
+
+#### Slim (`cp-edge-slim`, Colima or AKS, 1 node)
+
+```mermaid
+flowchart LR
+  subgraph clients["Clients (outside the cluster)"]
+    py["Python producer / consumer<br/>(Avro)"]
+    web["Browser"]
+  end
+
+  subgraph k8s["Colima k3s / AKS - namespace cp-edge-slim"]
+    cfk["CFK operator 3.4.1"]
+
+    subgraph ext["NodePorts (Colima) or LoadBalancers (AKS)"]
+      nk["kafka.cp-edge-slim.test:31000"]
+      nsr["sr.cp-edge-slim.test:31081"]
+      nc3["c3.cp-edge-slim.test:31021"]
+    end
+
+    k0["kafka-0<br/>combined broker + KRaft controller<br/>(KRaftController CR,<br/>process.roles=broker,controller)"]
+
+    sr["Schema Registry<br/>schemaregistry-0"]
+
+    subgraph c3pod["Control Center pod - controlcenter-0"]
+      c3["Control Center 2.7"]
+      prom["Prometheus :9090"]
+      am["Alertmanager :9093"]
+    end
+  end
+
+  py -- "SASL_SSL" --> nk
+  py -- "HTTPS + API key" --> nsr
+  web -- "HTTPS + login" --> nc3
+
+  nk -- "EXTERNAL :9092" --> k0
+  nsr --> sr
+  nc3 --> c3
+
+  k0 -- "CONTROLLER :9074 /<br/>REPLICATION :9072 (to itself)" --> k0
+  sr -- "INTERNAL :9071" --> k0
+  c3 -- "INTERNAL :9071" --> k0
+  c3 -- "HTTPS :8081" --> sr
+  c3 --> prom
+  prom --> am
+  k0 -. "metrics (OTLP)" .-> prom
+
+  cfk -. "manages CRs" .-> k0
+  cfk -.-> sr
+  cfk -.-> c3
+```
+
+### Versions
+
+| Component                       | Version / image                                                                 |
+|---------------------------------|---------------------------------------------------------------------------------|
+| CFK operator                    | 3.4.1 (Helm chart `confluentinc/confluent-for-kubernetes` `0.2038.24`)          |
+| CFK init container              | `confluentinc/confluent-init-container:3.4.1`                                   |
+| Kafka (Confluent Server), KRaft | `confluentinc/cp-server:8.4.1` (Apache Kafka 4.4)                                |
+| Schema Registry                 | `confluentinc/cp-schema-registry:8.4.1`                                          |
+| Control Center (next-gen)       | `confluentinc/cp-enterprise-control-center-next-gen:2.7.0`                       |
+| Prometheus / Alertmanager (C3)  | `confluentinc/cp-enterprise-prometheus:2.7.0` / `cp-enterprise-alertmanager:2.7.0` |
+
+All images are multi-arch (amd64/arm64), so the same manifests run on Apple Silicon (Colima) and AKS.
+The CFK CRDs used are documented in the [CFK API reference](https://docs.confluent.io/operator/current/co-api.html) (`platform.confluent.io/v1beta1`): `KRaftController`, `Kafka`, `SchemaRegistry`, `ControlCenter`, `KafkaRestClass` and `KafkaTopic`.
+
+### Security
+
+Every listener is encrypted and authenticated. There is no plaintext anywhere.
+
+| Path                                   | Protocol                  | Credentials                                       |
+|----------------------------------------|---------------------------|---------------------------------------------------|
+| External clients -> Kafka (EXTERNAL)   | SASL_SSL (PLAIN)          | `config/credentials/kafka-users.json`             |
+| SR / C3 -> Kafka (INTERNAL, 9071)      | SASL_SSL (PLAIN)          | user `kafka`                                      |
+| Broker <-> broker (REPLICATION, 9072)  | SASL_SSL (PLAIN)          | user `kafka`                                      |
+| Broker <-> KRaft (CONTROLLER, 9074)    | SASL_SSL (PLAIN)          | user `kafka`                                      |
+| Schema Registry REST                   | HTTPS + basic auth ("API key/secret") | `config/credentials/sr-users.txt`     |
+| Control Center UI                      | HTTPS + basic auth login  | `config/credentials/c3-users.txt`                 |
+| Kafka REST / Admin API v3 (HA only)    | HTTPS + basic auth        | `config/credentials/rest-users.txt`               |
+
+- **TLS**: self-signed. `scripts/certs.sh` creates one CA (shared by both variants) plus one server certificate per variant. The certificate covers the external hostnames (`*.cp-edge-<variant>.test`) and the in-cluster service/pod names. CFK builds the keystores and truststores from it (secret `tls-cp`). Updating the secret triggers a rolling restart, so certificates can be rotated by re-running `certs.sh`.
+- **Authorization**: Kafka ACLs (`authorization.type: simple`, `allow.everyone.if.no.acl.found=false`), with super user `User:kafka`. A user without ACLs can authenticate but can't read or write anything. Confluent RBAC is not used.
+- **Users**: Kafka PLAIN users are hot-reloaded (`refresh_ms=3000`). Edit `config/credentials/kafka-users.json` and re-run `scripts/secrets.sh <variant>`. No restart is needed.
+- **Metrics**: brokers and KRaft push metrics (OTLP) to the Prometheus bundled with Control Center (`dependencies.metricsClient`). There is no JMX exporter or Grafana stack to run.
+
+> **Slim / combined mode:** CFK has no first-class broker+controller combined mode. The slim variant is a single `KRaftController` CR (named `kafka`) whose generated config is extended through `configOverrides` with `process.roles=broker,controller` and the REPLICATION/INTERNAL/EXTERNAL listeners (see `k8s/slim/base/kafka.yaml`). It works well for edge/demo use, but Confluent doesn't support it for production. Use the HA layout there.
+
+### Demo topics
+
+| Topic        | Used by                                                                 | Format |
+|--------------|-------------------------------------------------------------------------|--------|
+| `demo-topic` | Python producer/consumer and the Avro console tools (`kafka-avro-console-*`). Schema Registry subject `demo-topic-value`, record `edge.cp.Customer` | Avro   |
+| `perf-topic` | `kafka-producer-perf-test` and the plain console producer/consumer       | Raw bytes / text |
+
+Keep raw (non-Avro) data out of `demo-topic`: the Avro consumers fail on records that weren't written through Schema Registry (`Unknown magic byte!`).
+
+### Repository layout
+
+```
+config/
+  credentials/        users and passwords (Kafka, Schema Registry API keys, C3 login, REST)
+  tls/server.cnf      OpenSSL template for the server certificate (SANs)
+  client/             client.properties for a local Kafka CLI (optional, needs Java)
+k8s/
+  ha/                 HA manifests (AKS, LoadBalancer) + KafkaTopic CRs
+  slim/base/          slim manifests (no external access)
+  slim/colima/        overlay: NodePorts on the Colima/k3s node
+  slim/aks/           overlay: Azure LoadBalancers
+scripts/
+  env.sh              per-variant settings (namespace, hostnames, ports), sourced by the other scripts
+  deploy.sh           end-to-end deploy: CFK + certs + secrets + CP
+  teardown.sh         remove a variant (namespace, PVCs, operator, certs)
+  certs.sh            self-signed CA + server cert + secret tls-cp
+  secrets.sh          credential secrets from config/credentials/
+  etc_hosts.sh        /etc/hosts entries + external endpoints
+  kafka-cli.sh        run any Kafka CLI tool (incl. Avro console tools) inside the cluster
+  topics.sh           demo-topic + perf-topic
+  acls.sh             demo ACLs for demo-user-001
+  python/             Avro producer/consumer using Schema Registry
+terraform/main.tf     AKS cluster sized per variant
+certs/                generated certificates (git-ignored)
+```
+
+## 2. Prerequisites
 
 ```bash
-export NAMESPACE="cp-poc"
-export DOMAIN="local.kafka."$NAMESPACE
-export REST_DOMAIN="kafka."$DOMAIN
-export BOOTSTRAP=$DOMAIN":9092"
-export CERTS_FOLDER="./sslcerts/"
-export CREDENTIALS_FOLDER="./credentials/"
-export JKS_PASSWORD="mystorepassword"
+brew install kubectl helm openssl gettext python3   # gettext provides envsubst
 ```
 
-### 2.2 Create K8s Namespace
+There's no Docker or Java requirement. The Kafka CLI runs inside the cluster (`scripts/kafka-cli.sh`), and the client truststore is generated with OpenSSL.
+
+- **Colima**: `brew install colima`
+- **AKS**: `brew install azure-cli terraform`
+
+**Licence**: without a licence key, Confluent Platform runs in a 30-day trial mode. To apply a key, add `--set licenseKey=<key>` to the `helm upgrade` in `scripts/deploy.sh`, and uncomment `license.globalLicense: true` in the CRs.
+
+## 3. Running on Colima (slim only)
+
+Colima runs a single-node k3s cluster, so only the **slim** variant is supported locally. The HA variant needs one node per broker/controller (`oneReplicaPerNode`) and one LoadBalancer IP per broker.
+
+### 3.1 Start a Kubernetes VM
+
+A dedicated profile (`cfk`) keeps it separate from any other Colima/Docker VM. `--network-address` gives the VM an IP that is reachable from the Mac, which the NodePorts are exposed on.
 
 ```bash
-kubectl create namespace $NAMESPACE 2> /dev/null
-kubectl config set-context --current --namespace=$NAMESPACE
+colima start -p cfk --kubernetes --runtime containerd \
+  --cpu 4 --memory 8 --disk 40 --network-address
+
+kubectl config use-context colima-cfk
+kubectl get nodes -o wide        # note the INTERNAL-IP, e.g. 192.168.64.2
 ```
 
-### 2.3 Install Confluent Operator
+The slim variant uses about 3 GiB of RAM and requests 1.25 vCPU / 5 GiB. 4 vCPU / 8 GiB leaves enough headroom. To resize later: `colima stop -p cfk && colima start -p cfk --cpu <n> --memory <GiB>`.
 
-To set the [Confluent Platform licence at a global level](https://docs.confluent.io/operator/current/co-license.html) use `--set licenseKey=<CFK license key>` when installing the `confluent-operator`. Also, make sute to set `spec.license.globalLicense: true` in the component custom resources (CR). That will create the confluent-operator-licensing secret with the following files:
- - `license.txt` contains the <CFK_license_key> you specified
- - `publicKey.pem` contains the public key used to validate the signed license
+### 3.2 Deploy
 
 ```bash
-helm upgrade --install confluent-operator confluentinc/confluent-for-kubernetes \
-  --namespace $NAMESPACE \
-  --set kRaftEnabled=true #--set licenseKey=<CFK license key>
+./scripts/deploy.sh slim colima
 ```
 
-Confluent Platform Licences can also be installed at the [component-level](https://docs.confluent.io/operator/current/co-license.html#update-component-level-licenses).
-
-Make sure the confluent-operator pod is running:
-```bash
-kubectl get pods -n $NAMESPACE
-```
-
-Response (example):
-```bash
-NAME                                 READY   STATUS    RESTARTS   AGE
-confluent-operator-9876f6577-gwms5   1/1     Running   0          5s
-```
-
-### 2.4 Create SSL Self-Signed Certificate (Main Domain + wildcard for the SANs)
-
-Make sure to have `openssl`, `cfssl` and `cfssljson` installed.
+This installs CFK into `cp-edge-slim`, generates the certificates, creates the secrets, applies `k8s/slim/colima` and waits until everything is `RUNNING` (about 3-5 minutes on the first run, which includes image pulls).
 
 ```bash
-rm -rf $CERTS_FOLDER 2> /dev/null
-mkdir $CERTS_FOLDER
-
-echo "jksPassword="$JKS_PASSWORD | tr -d '\n' > $CERTS_FOLDER/jksPassword.txt
-
-openssl genrsa -out $CERTS_FOLDER/rootCAkey.pem 2048
-openssl req -x509  -new -nodes \
-  -key $CERTS_FOLDER/rootCAkey.pem \
-  -days 3650 \
-  -out $CERTS_FOLDER/cacerts.pem \
-  -subj "/C=US/ST=CA/L=MVT/O=TestOrg/OU=Cloud/CN=TestCA"
-openssl x509 -in $CERTS_FOLDER/cacerts.pem -text -noout
-
-keytool -delete -alias $NAMESPACE -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD 2> /dev/null
-keytool -importcert -trustcacerts -alias $NAMESPACE -file $CERTS_FOLDER/cacerts.pem -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD -noprompt
-
-cfssl gencert -ca=$CERTS_FOLDER/cacerts.pem \
-  -ca-key=$CERTS_FOLDER/rootCAkey.pem \
-  -config=ca-config.json \
-  -profile=server kafka-server-domain.json | cfssljson -bare $CERTS_FOLDER/kafka-server
-
-kubectl delete secret tls-kafka -n $NAMESPACE 2> /dev/null
-kubectl create secret generic tls-kafka \
-  --from-file=fullchain.pem=$CERTS_FOLDER/kafka-server.pem \
-  --from-file=cacerts.pem=$CERTS_FOLDER/cacerts.pem \
-  --from-file=privkey.pem=$CERTS_FOLDER/kafka-server-key.pem \
-  --namespace $NAMESPACE
-
-kubectl delete secret ca-pair-sslcerts -n $NAMESPACE 2> /dev/null
-kubectl create secret generic ca-pair-sslcerts \
-  --from-file=ca.crt=./sslcerts/cacerts.pem \
-  --from-file=ca.key=./sslcerts/rootCAkey.pem \
-  -n $NAMESPACE 
-
-keytool -list -keystore $CERTS_FOLDER/truststore.jks -storepass $JKS_PASSWORD
+kubectl -n cp-edge-slim get pods
+NAME                                  READY   STATUS    RESTARTS   AGE
+confluent-operator-5f8cfd8b9b-p7g6d   1/1     Running   0          8m
+controlcenter-0                       3/3     Running   0          7m
+kafka-0                               1/1     Running   0          7m
+schemaregistry-0                      1/1     Running   0          7m
 ```
 
-### 2.5 Credentials
+### 3.3 Hostnames
 
-The authentication credentials for Confluent Platform are managed via Kubernetes Secrets, as defined in the `secrets.yaml` file. If any changes are required—such as updating passwords, adding new users, or modifying existing credentials—the YAML file must be updated accordingly and reapplied using `kubectl apply -f`. Once the updated Secret is applied, the authentication configuration will be refreshed automatically, as per the `refresh_ms="3000"` setting in the listener configuration. This ensures that the system picks up changes within 3 seconds without requiring a manual restart.
+`deploy.sh` ends by printing the `/etc/hosts` entry (run `./scripts/etc_hosts.sh slim colima` to print it again):
 
 ```bash
-kubectl delete secrets credential -n $NAMESPACE 2> /dev/null
-kubectl create secret generic credential \
-  --from-file=plain.txt=$CREDENTIALS_FOLDER/plain.txt \
-  --from-file=plain-users.json=$CREDENTIALS_FOLDER/plain-users.json \
-  --from-file=basic.txt=$CREDENTIALS_FOLDER/basic.txt -n $NAMESPACE
+echo "192.168.64.2 kafka.cp-edge-slim.test sr.cp-edge-slim.test c3.cp-edge-slim.test" | sudo tee -a /etc/hosts
 ```
 
-### 2.6 Apply CRDs
+| Endpoint                   | URL                                    |
+|----------------------------|----------------------------------------|
+| Kafka bootstrap (SASL_SSL) | `kafka.cp-edge-slim.test:31000`        |
+| Schema Registry (HTTPS)    | `https://sr.cp-edge-slim.test:31081`   |
+| Control Center (HTTPS)     | `https://c3.cp-edge-slim.test:31021`   |
 
-#### 2.6.1 Confluent Platform
+Then continue with [5. Using the demo](#5-using-the-demo) (use `slim` as the variant).
+
+## 4. Running on Azure AKS (HA or slim)
+
+### 4.1 Cluster sizing
+
+| Variant | Nodes | Node size (default)                 | CP resource requests | Why                                                   |
+|---------|-------|-------------------------------------|----------------------|-------------------------------------------------------|
+| HA      | 3     | `Standard_D4s_v5` (4 vCPU / 16 GiB) | about 3.5 vCPU / 12 GiB | `oneReplicaPerNode`: each node runs 1 KRaft + 1 broker, and SR/C3 are spread across nodes |
+| Slim    | 1     | `Standard_D4s_v5` (4 vCPU / 16 GiB) | about 1.25 vCPU / 5 GiB  | single combined node + SR + C3                     |
+
+These sizes are for a functional demo. For performance tests, use `Standard_D8s_v5` (`-var vm_size=...`) and raise `podTemplate.resources` and `dataVolumeCapacity` in the CRs. Since CFK 3.4, the broker heap defaults to 50% of the memory request and the KRaft heap to 80%.
+
+### 4.2 Create the cluster
+
+With Terraform (`terraform/main.tf`):
 
 ```bash
-kubectl apply -f confluent_platform_HA.yaml -n $NAMESPACE
+az login
+cd terraform
+terraform init
+terraform apply -var="subscription_id=$(az account show --query id -o tsv)" \
+                -var="variant=ha" \
+                -var="owner_email=<your email>"
+$(terraform output -raw get_credentials)     # az aks get-credentials ...
+cd ..
 ```
 
-Make sure the KRaft + Kafka pods are running:
-```bash
-kubectl get pods -n $NAMESPACE
-```
-
-Response (example):
-```bash
-NAME                                 READY   STATUS     RESTARTS   AGE
-confluent-operator-9876f6577-gwms5   1/1     Running    0          2m59s
-kafka-0                              1/1     Running    0          89s
-kafka-1                              1/1     Running    0          89s
-kafka-2                              1/1     Running    0          89s
-kraftcontroller-0                    1/1     Running    0          170s
-kraftcontroller-1                    1/1     Running    0          170s
-kraftcontroller-2                    1/1     Running    0          170s
-```
-
-#### 2.6.2 Endpoint
-
-The bootstrap endpoint used in this deployment is a placeholder and will not resolve automatically. To ensure proper connectivity, you must manually register it in the `/etc/hosts` file. This involves mapping the bootstrap hostname to the appropriate IP address of your AKS cluster. Without this step, clients and components may fail to communicate with the Confluent Platform.
-
-To know what are the external IP addresses assigned to the kafka cluster and brokers, run the following command:
-```bash
-kubectl get svc -n $NAMESPACE
-```
-
-Response (example):
-```bash
-NAME                            TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)                                                                   AGE
-confluent-operator              ClusterIP      10.0.104.234   <none>           7778/TCP                                                                  4h19m
-kafka                           ClusterIP      None           <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
-kafka-0-internal                ClusterIP      10.0.195.238   <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
-kafka-0-lb                      LoadBalancer   10.0.91.139    51.137.132.62    9092:31947/TCP                                                            47s
-kafka-1-internal                ClusterIP      10.0.7.224     <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
-kafka-1-lb                      LoadBalancer   10.0.60.103    51.137.132.75    9092:32304/TCP                                                            47s
-kafka-2-internal                ClusterIP      10.0.200.141   <none>           9074/TCP,9092/TCP,8090/TCP,9071/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP   47s
-kafka-2-lb                      LoadBalancer   10.0.7.198     51.137.132.245   9092:31897/TCP                                                            47s
-kafka-bootstrap-lb              LoadBalancer   10.0.84.162    51.137.157.215   9092:30812/TCP                                                            47s
-kafka-kafka-rest-bootstrap-lb   LoadBalancer   10.0.78.63     51.137.155.27    8090:32524/TCP                                                            47s
-kraftcontroller                 ClusterIP      None           <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
-kraftcontroller-0-internal      ClusterIP      10.0.105.126   <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
-kraftcontroller-1-internal      ClusterIP      10.0.9.181     <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
-kraftcontroller-2-internal      ClusterIP      10.0.32.9      <none>           9074/TCP,7203/TCP,7777/TCP,7778/TCP,9072/TCP                              108s
-```
-
-Alternatively, run the script `./etc_hosts.sh` to printout the entries required for `/etc/hosts`. See below example for a three brokers cluster:
-```bash
-# Entries for /etc/hosts:
-51.137.132.62 b0.local.kafka.cp-poc
-51.137.132.75 b1.local.kafka.cp-poc
-51.137.132.245 b2.local.kafka.cp-poc
-51.137.157.215 local.kafka.cp-poc
-51.137.155.27 kafka.local.kafka.cp-poc
-```
-
-Make sure the CP Kafka cluster (Loadbalancer) has a SSL certificate attached to it:
-```bash
-openssl s_client -connect $BOOTSTRAP -servername $DOMAIN
-```
-
-To test access to the REST Interface (v3), try:
-```bash
-curl -v -k "https://$REST_DOMAIN:8090/kafka/v3/clusters" -u kafka:kafka-secret -H "Accept: application/json" | jq .
-```
-
-Response (example):
-```bash
-{
-  "kind": "KafkaClusterList",
-  "metadata": {
-    "self": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters",
-    "next": null
-  },
-  "data": [
-    {
-      "kind": "KafkaCluster",
-      "metadata": {
-        "self": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01",
-        "resource_name": "crn:///kafka=ConfluentPlatformPoC01"
-      },
-      "cluster_id": "ConfluentPlatformPoC01",
-      "controller": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/brokers/0"
-      },
-      "acls": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/acls"
-      },
-      "brokers": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/brokers"
-      },
-      "broker_configs": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/broker-configs"
-      },
-      "consumer_groups": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/consumer-groups"
-      },
-      "topics": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics"
-      },
-      "partition_reassignments": {
-        "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/-/partitions/-/reassignment"
-      }
-    }
-  ]
-}
-```
-
-#### 2.6.3 Topics
-
-The kafka CLI will only work with Java 17. If you have v21 installed, try setting it to v17 temporarely:
-```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-```
-
-List topics (Kafka CLI):
-```bash
-kafka-topics --list \
-  --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties
-```
-
-List topics via the [REST Admin v3 interface](https://docs.confluent.io/platform/current/kafka-rest/api.html#crest-api-v3):
-```bash
-curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics" -u kafka:kafka-secret -H "Accept: application/json" | jq .
-```
-
-These CRDs can be used as a template for topics creation.
+Or with the Azure CLI:
 
 ```bash
-kubectl apply -f topic-demo.yaml -n $NAMESPACE
-kubectl apply -f topic-catalina.yaml -n $NAMESPACE
+az group create --name edge-cp-poc --location uksouth --tags owner_email=<your email>
+az aks create -g edge-cp-poc -n edge-cp --node-vm-size Standard_D4s_v5 \
+  --node-count 3 --zones 1 2 3 --generate-ssh-keys --tags owner_email=<your email>   # --node-count 1 (no --zones) for slim
+az aks get-credentials -g edge-cp-poc -n edge-cp
 ```
 
-Alternativelly, to create a topic using `kafka-topics(.sh)`, try:
+The Kubernetes version must be within the range CFK 3.4 supports (1.29 - 1.37). Check with `az aks get-versions -l uksouth`.
+
+### 4.3 Deploy
+
 ```bash
-kafka-topics --create \
-  --topic demo-topic \
-  --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --partitions 1 \
-  --replication-factor 1
-
-kafka-topics --create \
-  --topic catalina-test \
-  --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --partitions 1 \
-  --replication-factor 1
+./scripts/deploy.sh ha            # HA  -> k8s/ha
+./scripts/deploy.sh slim aks      # or slim -> k8s/slim/aks
 ```
 
-The REST Admin v3 interface can also be used to create topics, for example:
+On HA, CFK also creates `demo-topic` and `perf-topic` from `k8s/ha/topics.yaml` (`KafkaTopic` CRs, through the embedded REST API):
+
 ```bash
-curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics" \
-  -u kafka:kafka-secret \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -d '{"topic_name": "catalina-test-101", "partitions_count": 1, "replication_factor": 1, "configs": [{"name": "cleanup.policy", "value": "delete"}, {"name": "compression.type", "value": "gzip"}]}' \
-  | jq .
+kubectl -n cp-edge-ha get kafkatopic
+NAME         REPLICAS   PARTITION   STATUS    CLUSTERID
+demo-topic   3          3           CREATED   MTM5YTEwZGMtMDIxYi00Yw
+perf-topic   3          3           CREATED   MTM5YTEwZGMtMDIxYi00Yw
 ```
 
-Response (example):
+### 4.4 Hostnames
+
+Each external endpoint gets its own Azure LoadBalancer IP. Once the IPs are assigned (`kubectl -n cp-edge-ha get svc`), print the `/etc/hosts` entries (or create the records in a DNS zone you own):
+
 ```bash
-{
-  "kind": "KafkaTopic",
-  "metadata": {
-    "self": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101",
-    "resource_name": "crn:///kafka=ConfluentPlatformPoC01/topic=catalina-test-101"
-  },
-  "cluster_id": "ConfluentPlatformPoC01",
-  "topic_name": "catalina-test-101",
-  "is_internal": false,
-  "replication_factor": 1,
-  "partitions_count": 1,
-  "partitions": {
-    "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101/partitions"
-  },
-  "configs": {
-    "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101/configs"
-  },
-  "partition_reassignments": {
-    "related": "https://kafka.local.kafka.cp-poc:8090/kafka/v3/clusters/ConfluentPlatformPoC01/topics/catalina-test-101/partitions/-/reassignment"
-  },
-  "authorized_operations": []
-}
+./scripts/etc_hosts.sh ha
+# Add to /etc/hosts (sudo vi /etc/hosts):
+20.0.0.11 kafka.cp-edge-ha.test
+20.0.0.12 b0.cp-edge-ha.test
+20.0.0.13 b1.cp-edge-ha.test
+20.0.0.14 b2.cp-edge-ha.test
+20.0.0.15 rest.cp-edge-ha.test
+20.0.0.16 sr.cp-edge-ha.test
+20.0.0.17 c3.cp-edge-ha.test
 ```
 
-Execute Performance Tests:
+| Endpoint                   | HA (AKS)                                 | Slim (AKS)                             |
+|----------------------------|------------------------------------------|----------------------------------------|
+| Kafka bootstrap (SASL_SSL) | `kafka.cp-edge-ha.test:9092` (brokers `b0..b2.cp-edge-ha.test:9092`) | `kafka.cp-edge-slim.test:31000` |
+| Schema Registry (HTTPS)    | `https://sr.cp-edge-ha.test:8081`        | `https://sr.cp-edge-slim.test:31081`   |
+| Control Center (HTTPS)     | `https://c3.cp-edge-ha.test:9021`        | `https://c3.cp-edge-slim.test:31021`   |
+| Kafka REST v3 (HTTPS)      | `https://rest.cp-edge-ha.test:8090`      | n/a                                    |
+
+> The LoadBalancers are public by default. To keep them internal to the VNet, add the annotation `service.beta.kubernetes.io/azure-load-balancer-internal: "true"` (`externalAccess.loadBalancer.annotations` in the CRs, `metadata.annotations` on `kafka-external`). You can also restrict sources with `loadBalancerSourceRanges`.
+
+## 5. Using the demo
+
+The examples use the slim variant on Colima. For HA, replace `slim` with `ha` and use the HA hostnames and ports from 4.4. Run everything from the repository root.
+
 ```bash
-kafka-producer-perf-test \
-   --topic demo-topic \
-   --num-records 20000 \
-   --record-size 10000 \
-   --throughput -1 \
-   --producer.config ./sslcli.properties \
-   --producer-props bootstrap.servers=$BOOTSTRAP batch.size=100 compression.type=lz4 acks=all
+export VARIANT=slim
+export DOMAIN=cp-edge-$VARIANT.test
+export BOOTSTRAP=kafka.$DOMAIN:31000      # HA: kafka.cp-edge-ha.test:9092
+export SR_URL=https://sr.$DOMAIN:31081    # HA: https://sr.cp-edge-ha.test:8081
+export C3_URL=https://c3.$DOMAIN:31021    # HA: https://c3.cp-edge-ha.test:9021
 ```
 
-#### 2.6.4 ACLs
+(`source scripts/env.sh slim colima` sets the same variables, plus `NAMESPACE`.)
 
-List ACLs (Kafka CLI):
+### 5.1 TLS check
+
 ```bash
-kafka-acls --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --list
+openssl s_client -connect $BOOTSTRAP -servername kafka.$DOMAIN -CAfile certs/ca.pem </dev/null 2>/dev/null | grep 'Verify return'
+# Verify return code: 0 (ok)
 ```
 
-List ACLs via the [REST Admin v3 interface](https://docs.confluent.io/platform/current/kafka-rest/api.html#crest-api-v3):
+### 5.2 Topics and ACLs
+
 ```bash
-curl -k "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/acls" -u kafka:kafka-secret -H "Accept: application/json" | jq .
+./scripts/topics.sh $VARIANT     # creates demo-topic and perf-topic (RF 3 / min ISR 2 on HA, RF 1 on slim)
+./scripts/acls.sh $VARIANT       # demo-user-001: All on demo-topic, All on group demo-consumer-group, Describe on the cluster
+./scripts/kafka-cli.sh $VARIANT kafka-acls --list
 ```
 
-Add ACLs (Kafka CLI):
+Both scripts are idempotent. On HA the topics already exist from the `KafkaTopic` CRs.
+
+### 5.3 Kafka CLI (`scripts/kafka-cli.sh`)
+
+There's no need for a local Kafka install or to `exec` into a pod yourself. `scripts/kafka-cli.sh <variant> <tool> [args]` runs the tool inside the cluster as the `kafka` super user over the internal SASL_SSL listener, and adds `--bootstrap-server` and the client config (`--command-config`, `--producer.config` or `--consumer.config`) for you.
+
+- Plain tools run in the broker pod (`kafka-0`).
+- The Avro console tools only ship in the Schema Registry image, so they run in `schemaregistry-0`. The script adds the Schema Registry URL (HTTPS), truststore and API key (`config/credentials/sr-client.txt`).
+
+The `kafka` super user bypasses ACLs, so this is for administration and inspecting data. Use the Python clients (5.5) to see what an ACL-restricted user can do.
+
+Admin:
+
 ```bash
-kafka-acls --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --add \
-  --allow-principal "User:catalina-001" \
-  --operation All \
-  --topic 'catalina' \
-  --resource-pattern-type prefixed \
-  --group '*'
-
-kafka-acls --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --add \
-  --allow-principal "User:catalina-001" \
-  --operation Describe \
-  --cluster
-
-kafka-acls --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --add \
-  --allow-principal User:catalina-001 \
-  --operation All \
-  --group catalina-consumer-group
+./scripts/kafka-cli.sh $VARIANT kafka-topics --list
+./scripts/kafka-cli.sh $VARIANT kafka-topics --describe --topic demo-topic
+./scripts/kafka-cli.sh $VARIANT kafka-get-offsets --topic demo-topic
+./scripts/kafka-cli.sh $VARIANT kafka-consumer-groups --describe --group demo-consumer-group
+./scripts/kafka-cli.sh $VARIANT kafka-acls --add --allow-principal User:guest-001 --operation Read --topic demo-topic
 ```
 
-The REST Admin v3 interface can also be used to create ACLs, for example:
+Performance test and plain console tools (`perf-topic`):
+
 ```bash
-curl -k -X POST "https://$REST_DOMAIN:8090/kafka/v3/clusters/ConfluentPlatformPoC01/acls:batch" \
-  -u kafka:kafka-secret \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -d '{"data": [{"resource_type": "TOPIC", "resource_name": "demo-topic", "pattern_type": "LITERAL", "principal": "User:catalina-001", "host": "*", "operation": "ALL", "permission": "ALLOW"}]}' \
-  | jq .
+./scripts/kafka-cli.sh $VARIANT kafka-producer-perf-test --topic perf-topic --num-records 20000 --record-size 1000 \
+  --throughput -1 --producer-props acks=all compression.type=lz4
+# 20000 records sent, 41580.0 records/sec (39.65 MB/sec), 104.63 ms avg latency, ...
+
+./scripts/kafka-cli.sh $VARIANT kafka-console-producer --topic perf-topic        # type lines, Ctrl-D to finish
+./scripts/kafka-cli.sh $VARIANT kafka-console-consumer --topic perf-topic --from-beginning --max-messages 10
 ```
 
-Consumer Test (Python):
+Avro console tools (`demo-topic`, same `Customer` schema as the Python clients):
+
 ```bash
-python3 consumer.py
+SCHEMA='{"type":"record","name":"Customer","namespace":"edge.cp","fields":[
+  {"name":"name","type":"string"},{"name":"address","type":"string"},{"name":"ip","type":"string"}]}'
+
+echo '{"name":"Jane Doe","address":"1 Main St","ip":"10.0.0.1"}' | \
+  ./scripts/kafka-cli.sh $VARIANT kafka-avro-console-producer --topic demo-topic --reader-property value.schema="$SCHEMA"
+
+./scripts/kafka-cli.sh $VARIANT kafka-avro-console-consumer --topic demo-topic --from-beginning
+# {"name":"Jane Doe","address":"1 Main St","ip":"10.0.0.1"}
 ```
 
-Producer Test (Python):
+Without `echo ... |`, the producer reads one JSON record per line from the terminal until Ctrl-D. Press Ctrl-C to stop a consumer, or add `--max-messages N`. A schema that isn't compatible with the latest version of `demo-topic-value` is rejected by Schema Registry (default compatibility `BACKWARD`).
+
+Optionally, with Java 17+ and the Kafka CLI installed locally (`brew install openjdk kafka`), you can also connect from the Mac through the external listener using `config/client/client.properties`, which points at the generated `certs/truststore.p12`:
+
 ```bash
-python3 producer.py
+kafka-topics --bootstrap-server $BOOTSTRAP --command-config config/client/client.properties --list
 ```
 
-To remove the ACLs for a given user (see example for `catalina-001`):
+### 5.4 Schema Registry (API key)
+
 ```bash
-kafka-acls --bootstrap-server $BOOTSTRAP \
-  --command-config ./sslcli.properties \
-  --remove \
-  --allow-principal "User:catalina-001" \
-  --group '*' \
-  --force
+curl -s --cacert certs/ca.pem $SR_URL/subjects                                          # 401
+curl -s --cacert certs/ca.pem -u demo-user-001:bad $SR_URL/subjects                      # 401
+curl -s --cacert certs/ca.pem -u demo-user-001:demo-user-001-sr-secret $SR_URL/subjects   # ["demo-topic-value"] once data was produced
+curl -s --cacert certs/ca.pem -u demo-user-001:demo-user-001-sr-secret $SR_URL/subjects/demo-topic-value/versions/latest
 ```
 
-## 3. Observability with Prometheus-Grafana Stack
-Deploy Prometheus and Grafana using Helm charts or Kubernetes manifests. You can use the following commands to install them via Helm:
+### 5.5 Python producer / consumer (Avro + Schema Registry)
+
+The producer connects from the Mac through the external SASL_SSL listener as `demo-user-001`, registers the `edge.cp.Customer` Avro schema with `demo-user-001`'s SR API key, and produces fake customer records (Faker) to `demo-topic`. The consumer (group `demo-consumer-group`) reads them back and deserialises them through Schema Registry. Hostname verification stays on. Run `acls.sh` first (5.2).
+
 ```bash
-helm install prometheus prometheus-community/kube-prometheus-stack
-helm install grafana grafana/grafana
+python3 -m venv .venv && .venv/bin/pip install -r scripts/python/requirements.txt
+VARIANT=$VARIANT .venv/bin/python scripts/python/producer.py     # Ctrl-C to stop
+VARIANT=$VARIANT .venv/bin/python scripts/python/consumer.py     # Ctrl-C to stop
 ```
 
-To expose Kafka metrics to Prometheus, you need to enable JMX Exporter. Kafka exposes metrics through JMX (Java Management Extensions). CFK supports JMX exporter integration out of the box.
+Every setting can be overridden with an environment variable (`BOOTSTRAP`, `KAFKA_USER`, `KAFKA_PASSWORD`, `SR_URL`, `SR_API_KEY`, `TOPIC`, `GROUP_ID`, `CA_FILE`). See `scripts/python/common.py`. Negative tests:
 
-Modify your Kafka deployment to include the JMX exporter:
-```
-spec:
-  kafka:
-    config:
-      KAFKA_JMX_EXPORTER_ENABLED: "true"
-      KAFKA_JMX_EXPORTER_PORT: "<PORT NUMBER>"
-```
+| Override                                               | Result                                 |
+|--------------------------------------------------------|----------------------------------------|
+| `KAFKA_USER=guest-001 KAFKA_PASSWORD=guest-001-secret` | `TOPIC_AUTHORIZATION_FAILED` (no ACLs) |
+| `KAFKA_PASSWORD=wrong`                                 | `SASL authentication error`            |
+| `SR_API_KEY=demo-user-001:wrong`                       | `SchemaRegistryError` (401)            |
 
-For docker based deployments here is an [example](./cp-observability/docker-compose.yml#L57C6-L57C16).</br>
-Configure Prometheus to scrape Kafka metrics. This typically involves adding a scrape configuration in the Prometheus config to scrape the JMX exporter endpoint exposed by Kafka pods.
+### 5.6 Control Center
 
-In the Prometheus configuration (prometheus.yaml), add the following scrape job:
-```
-scrape_configs:
-  - job_name: 'kafka'
-    static_configs:
-      - targets: ['<kafka-pod-ip>:<PORT NUMBER AS IN THE PREV STEP>']
-```
+Open `$C3_URL` (for example https://c3.cp-edge-slim.test:31021) and log in with `admin` / `admin-secret`. Your browser will warn about the self-signed CA unless you trust `certs/ca.pem` (macOS: `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain certs/ca.pem`).
 
-After Prometheus starts scraping metrics from Kafka, you can create Grafana dashboards to visualize those metrics.
-You can either create your custom dashboards or use pre-built Kafka dashboards from the [jmx-monitoring-stack repository](https://github.com/confluentinc/jmx-monitoring-stacks/tree/main/jmxexporter-prometheus-grafana/assets/grafana/provisioning).
+### 5.7 Kafka REST / Admin API v3 (HA)
 
-## 4. Tearing it down
 ```bash
-kubectl delete -f topic-catalina.yaml -n $NAMESPACE
-kubectl delete -f topic-demo.yaml -n $NAMESPACE
-kubectl delete -f confluent_platform_HA.yaml -n $NAMESPACE
-kubectl delete secret ca-pair-sslcerts -n $NAMESPACE
-kubectl delete secrets credential -n $NAMESPACE
-helm uninstall confluent-operator
-helm uninstall prometheus
-helm uninstall grafana
-kubectl delete namespace $NAMESPACE
-rm -rf $CERTS_FOLDER
+curl -s --cacert certs/ca.pem -u kafka:kafka-secret https://rest.cp-edge-ha.test:8090/kafka/v3/clusters | jq .
 ```
+
+## 6. Credentials
+
+All are demo values. Change them in `config/credentials/` and re-run `./scripts/secrets.sh <variant>`.
+
+| File                  | Format                    | Used for                                                   |
+|-----------------------|---------------------------|------------------------------------------------------------|
+| `kafka-users.json`    | `{"user": "password"}`    | Kafka SASL/PLAIN user store (all listeners, hot-reloaded)  |
+| `kafka-client.txt`    | `username=` / `password=` | Credentials of `kafka` (inter-broker, KRaft, SR/C3 -> Kafka) |
+| `sr-users.txt`        | `user: secret,role`       | Schema Registry API keys (roles `admin`, `developer`)      |
+| `sr-client.txt`       | `username=` / `password=` | C3 and the Avro console tools -> Schema Registry           |
+| `c3-users.txt`        | `user: password,role`     | Control Center login                                       |
+| `rest-users.txt`      | `user: password,role`     | Kafka REST API (HA)                                        |
+| `rest-client.txt`     | `username=` / `password=` | CFK -> Kafka REST (`KafkaRestClass`, `KafkaTopic` CRs)     |
+
+Demo users:
+
+| User                                   | Kafka password         | SR API key                | Notes                                           |
+|----------------------------------------|------------------------|---------------------------|-------------------------------------------------|
+| `kafka`                                | `kafka-secret`         | -                         | Super user (internal, CLI, REST)                |
+| `demo-user-001`                        | `demo-user-001-secret` | `demo-user-001-sr-secret` | ACLs from `acls.sh`; used by the Python clients |
+| `guest-001`                            | `guest-001-secret`     | `guest-001-sr-secret`     | No ACLs (negative tests)                        |
+| `demo-user-002..005`, `guest-002..005` | `<user>-secret`        | -                         | Spare Kafka users                               |
+| `sr-admin`                             | -                      | `sr-admin-secret`         | Schema Registry admin                           |
+| `admin` (C3)                           | -                      | -                         | Control Center login, `admin-secret`            |
+
+## 7. Tearing it down
+
+```bash
+./scripts/teardown.sh slim colima     # or: ./scripts/teardown.sh ha | ./scripts/teardown.sh slim aks
+colima stop -p cfk                    # or colima delete -p cfk
+```
+
+On AKS, delete the cluster with `terraform destroy -var=...` (or `az group delete -n edge-cp-poc`).
+`rm -rf certs` removes the generated CA, so the next `deploy.sh` creates a new one.
+
+## 8. Troubleshooting
+
+| Symptom                                                    | Fix                                                                 |
+|------------------------------------------------------------|---------------------------------------------------------------------|
+| `kafka-topics: command not found`                          | Use `./scripts/kafka-cli.sh <variant> kafka-topics ...` (no local Java needed) |
+| Python/openssl can't resolve `kafka.cp-edge-<variant>.test` | Add the `/etc/hosts` entries (`./scripts/etc_hosts.sh <variant> [platform]`) |
+| `Unknown magic byte!` in an Avro consumer                  | The topic has non-Avro records. Keep plain/perf data in `perf-topic` |
+| Avro producer: `Schema being registered is incompatible`   | Use the same schema as `demo-topic-value` (5.3), or a compatible evolution |
+| `TOPIC_AUTHORIZATION_FAILED` / `GROUP_AUTHORIZATION_FAILED` | Run `./scripts/acls.sh <variant>`, or add ACLs for that user          |
+| Pods `Pending` on HA                                       | HA needs 3 nodes (`oneReplicaPerNode`). Check `kubectl describe pod`  |
+| Browser certificate warning                                | Trust `certs/ca.pem` (5.6)                                           |

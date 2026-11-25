@@ -1,0 +1,16 @@
+# Used by KafkaTopic CRs (and CFK) to talk to the embedded Kafka REST API
+apiVersion: platform.confluent.io/v1beta1
+kind: KafkaRestClass
+metadata:
+  name: kafka-rest
+spec:
+  kafkaClusterRef:
+    name: kafka
+  kafkaRest:
+    endpoint: https://kafka.cp-edge-ha.svc.cluster.local:8090
+    tls:
+      secretRef: tls-cp
+    authentication:
+      type: basic
+      basic:
+        secretRef: rest-client

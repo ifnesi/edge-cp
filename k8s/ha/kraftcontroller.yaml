@@ -1,0 +1,41 @@
+apiVersion: platform.confluent.io/v1beta1
+kind: KRaftController
+metadata:
+  name: kraftcontroller
+spec:
+  replicas: 3
+  # One pod per node (needs >= 3 nodes in the AKS node pool)
+  oneReplicaPerNode: true
+  dataVolumeCapacity: 10Gi
+  image:
+    application: confluentinc/cp-server:8.4.1
+    init: confluentinc/confluent-init-container:3.4.1
+  podTemplate:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+  # If CFK was installed with --set licenseKey=<key>:
+  # license:
+  #   globalLicense: true
+  tls:
+    secretRef: tls-cp
+  listeners:
+    controller:
+      tls:
+        enabled: true
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: kafka-credential
+  authorization:
+    type: simple
+    superUsers:
+      - User:kafka
+  configOverrides:
+    server:
+      - allow.everyone.if.no.acl.found=false
+  # Ship metrics (OTLP) to the Prometheus bundled with Control Center
+  dependencies:
+    metricsClient:
+      url: http://controlcenter.cp-edge-ha.svc.cluster.local:9090

@@ -1,0 +1,12 @@
+# High-availability variant: 3x KRaft, 3x brokers, 1x Schema Registry, 1x Control Center (+ Prometheus/Alertmanager)
+# Target: AKS (LoadBalancer external access, >= 3 nodes). Deploy with: scripts/deploy.sh ha
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cp-edge-ha
+resources:
+  - kraftcontroller.yaml
+  - kafka.yaml
+  - kafkarestclass.yaml
+  - schemaregistry.yaml
+  - controlcenter.yaml
+  - topics.yaml

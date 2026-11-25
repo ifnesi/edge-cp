@@ -1,0 +1,43 @@
+# OpenSSL config template for the CP server certificate (one cert shared by all components of a variant).
+# ${NAMESPACE} and ${DOMAIN} are filled in by scripts/certs.sh
+[ req ]
+prompt             = no
+distinguished_name = dn
+req_extensions     = v3_req
+
+[ dn ]
+C  = GB
+O  = Edge-CP PoC
+CN = ${DOMAIN}
+
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage         = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName   = @alt_names
+
+# Extensions applied when the CA signs the CSR (strict X.509 clients, e.g. Python 3.13+, need the key identifiers)
+[ v3_sign ]
+basicConstraints       = CA:FALSE
+keyUsage               = critical, digitalSignature, keyEncipherment
+extendedKeyUsage       = serverAuth, clientAuth
+subjectAltName         = @alt_names
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid,issuer
+
+[ alt_names ]
+# External hostname (NodePort / LoadBalancer)
+DNS.1  = ${DOMAIN}
+DNS.2  = *.${DOMAIN}
+DNS.3  = localhost
+# Internal K8s service and pod names
+DNS.4  = *.${NAMESPACE}.svc.cluster.local
+DNS.5  = *.kafka.${NAMESPACE}.svc.cluster.local
+DNS.6  = *.kraftcontroller.${NAMESPACE}.svc.cluster.local
+DNS.7  = *.schemaregistry.${NAMESPACE}.svc.cluster.local
+DNS.8  = *.controlcenter.${NAMESPACE}.svc.cluster.local
+DNS.9  = kafka
+DNS.10 = kraftcontroller
+DNS.11 = schemaregistry
+DNS.12 = controlcenter
+IP.1   = 127.0.0.1

@@ -1,0 +1,57 @@
+# Control Center (next-gen) 2.7 with bundled Prometheus + Alertmanager
+apiVersion: platform.confluent.io/v1beta1
+kind: ControlCenter
+metadata:
+  name: controlcenter
+spec:
+  replicas: 1
+  # Single broker: internal topics with replication factor 1
+  internalTopicReplicatorFactor: 1
+  image:
+    application: confluentinc/cp-enterprise-control-center-next-gen:2.7.0
+    init: confluentinc/confluent-init-container:3.4.1
+  dataVolumeCapacity: 10Gi
+  podTemplate:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+  # license:
+  #   globalLicense: true
+  # HTTPS UI, basic-auth login (secret c3-users). External access is added by the overlay
+  tls:
+    secretRef: tls-cp
+  authentication:
+    type: basic
+    basic:
+      secretRef: c3-users
+      roles:
+        - Administrators
+  services:
+    prometheus:
+      image: confluentinc/cp-enterprise-prometheus:2.7.0
+      pvc:
+        dataVolumeCapacity: 10Gi
+    alertmanager:
+      image: confluentinc/cp-enterprise-alertmanager:2.7.0
+  dependencies:
+    kafka:
+      bootstrapEndpoint: kafka.cp-edge-slim.svc.cluster.local:9071
+      tls:
+        enabled: true
+      authentication:
+        type: plain
+        jaasConfig:
+          secretRef: kafka-credential
+    schemaRegistry:
+      url: https://schemaregistry.cp-edge-slim.svc.cluster.local:8081
+      tls:
+        enabled: true
+      authentication:
+        type: basic
+        basic:
+          secretRef: sr-client
+    prometheusClient:
+      url: http://controlcenter.cp-edge-slim.svc.cluster.local:9090
+    alertManagerClient:
+      url: http://controlcenter.cp-edge-slim.svc.cluster.local:9093
